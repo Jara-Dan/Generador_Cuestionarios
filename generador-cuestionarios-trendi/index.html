@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<!-- ===========================================================================
+     index.html — Generador de Cuestionarios · Trendi
+     ---------------------------------------------------------------------------
+     Estructura (esqueleto) de la página. Aquí va SOLO el marcado HTML.
+       - Los estilos están en  css/style.css
+       - La lógica está en     js/main.js
+     La app funciona 100% en el navegador; no hay servidor ni backend.
+     ======================================================================== -->
+<!-- Metadatos y SEO/redes sociales (no afectan el funcionamiento) -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Generador de Cuestionarios · Trendi</title>
+<meta name="description" content="Herramienta Trendi para crear preguntas y exportarlas a Moodle (XML) sin complicaciones.">
+<meta name="theme-color" content="#ee7623">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Generador de Cuestionarios · Trendi">
+<meta property="og:description" content="Crea preguntas de opción múltiple, V/F, respuesta corta, numéricas, emparejamiento, completar espacios en blanco y ensayo, y expórtalas a tu Moodle en un clic.">
+<!-- Ícono de la pestaña (extraído a un archivo en /assets para mantenerlo editable) -->
+<link rel="icon" href="assets/favicon.svg">
+<!-- Tipografía Hanken Grotesk desde Google Fonts (degrada a fuente del sistema sin internet) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500&display=swap" rel="stylesheet">
+<!-- Hoja de estilos de la aplicación -->
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<!-- ===== Cabecera fija: marca + indicador de "Guardado automático" ===== -->
+
+<header>
+  <div class="head-in">
+    <div class="brand">
+      <div>
+        <div class="wordmark">Trend<span class="dot">i</span></div>
+        <small>Trends &amp; Innovation</small>
+      </div>
+    </div>
+    <div class="head-title">Generador de cuestionarios · exporta a Moodle</div>
+    <div class="savestate" id="saveState"><span class="dot-i"></span><span id="saveTxt">Guardado automático activo</span></div>
+  </div>
+</header>
+
+<noscript>
+  <div style="max-width:700px;margin:24px auto;padding:16px;background:#fbe9e9;border-radius:12px;color:#cf4040;font-weight:600;text-align:center;">
+    Esta herramienta necesita JavaScript activado para funcionar.
+  </div>
+</noscript>
+
+<main class="wrap">
+
+  <!-- IA + instrucciones: lanzadores -->
+  <div style="grid-column:1/-1;display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:-6px;">
+    <button type="button" class="btn btn-ai" id="aiOpenBtn" aria-haspopup="dialog">✨ Generar preguntas tipo ICFES con IA</button>
+    <button type="button" class="btn btn-ghost" id="helpOpenBtn" aria-haspopup="dialog">📖 Instrucciones de uso</button>
+  </div>
+
+  <!-- EDITOR -->
+  <section class="card card-pad" aria-labelledby="h-editor">
+    <h2 class="section-h" id="h-editor"><span class="num">1</span> Crear pregunta</h2>
+
+    <div class="field">
+      <label id="lbl-type">Tipo de pregunta</label>
+      <div class="types" id="types" role="group" aria-labelledby="lbl-type">
+        <button type="button" data-type="multichoice" aria-pressed="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="6" cy="8" r="2.5"/><line x1="11" y1="8" x2="20" y2="8"/><circle cx="6" cy="16" r="2.5"/><line x1="11" y1="16" x2="20" y2="16"/></svg>
+          Opción múltiple
+        </button>
+        <button type="button" data-type="truefalse" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>
+          Verdadero / Falso
+        </button>
+        <button type="button" data-type="shortanswer" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h7"/></svg>
+          Respuesta corta
+        </button>
+        <button type="button" data-type="numerical" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 4v16M14 4v16M4 9h16M4 15h16"/></svg>
+          Respuesta numérica
+        </button>
+        <button type="button" data-type="matching" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="6" cy="7" r="2"/><circle cx="18" cy="17" r="2"/><path d="M8 7h6a0 0 0 010 0M8 7c4 0 4 10 8 10"/></svg>
+          Emparejamiento
+        </button>
+        <button type="button" data-type="cloze" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12h4M16 12h4"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+          Completar espacios en blanco
+        </button>
+        <button type="button" data-type="essay" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5h16M4 10h16M4 15h12M4 20h8"/></svg>
+          Ensayo
+        </button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="qname">Título de la pregunta <span class="hint">— etiqueta corta para el banco (NO es lo que ve el estudiante). Se autogenera si lo dejas vacío.</span></label>
+      <input type="text" id="qname" placeholder="Se generará automáticamente, p. ej. EvaSociales7 03">
+    </div>
+
+    <!-- Reading passage -->
+    <div class="field">
+      <label for="passageSel">Lectura / estímulo compartido <span class="hint">— opcional, se antepone al enunciado (ideal para comprensión lectora)</span></label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="passageSel" style="flex:1;min-width:160px;"><option value="">Sin lectura</option></select>
+        <button type="button" class="btn btn-ghost btn-sm" id="managePassages">Gestionar lecturas</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="stmtLabel" id="stmtLabel">Enunciado de la pregunta <span class="hint">— lo que ve el estudiante. Admite negrita, cursiva y párrafos.</span></label>
+      <div class="rt-tools" role="toolbar" aria-label="Formato del enunciado">
+        <button type="button" data-cmd="bold" title="Negrita" aria-label="Negrita"><b>B</b></button>
+        <button type="button" data-cmd="italic" title="Cursiva" aria-label="Cursiva"><i>I</i></button>
+        <button type="button" data-cmd="insertUnorderedList" title="Lista" aria-label="Lista con viñetas">≡</button>
+        <button type="button" data-cmd="math" title="Insertar fórmula \( \)" aria-label="Insertar fórmula matemática">∑</button>
+      </div>
+      <div class="rt" id="stmt" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="stmtLabel" aria-describedby="errStmt" data-ph="Escribe aquí el enunciado…"></div>
+      <div class="err-msg" id="errStmt">El enunciado no puede estar vacío.</div>
+      <div class="help tip" id="clozeHint" style="display:none;">
+        <b>Huecos:</b> escribe la respuesta entre dobles corchetes, p. ej. <b>La capital de Francia es [[París]].</b>
+        Para varias respuestas válidas usa <b>|</b>: <b>[[París|Paris]]</b>. Huecos detectados: <b id="gapCount">0</b>.
+      </div>
+    </div>
+
+    <!-- MULTICHOICE -->
+    <div class="field" id="mcBlock">
+      <label id="lbl-opts">Opciones de respuesta <span class="hint">— marca la(s) correcta(s)</span></label>
+      <label class="chk" style="margin:0 0 12px;font-weight:600;">
+        <input type="checkbox" id="mcMulti"> Permitir varias respuestas correctas
+      </label>
+      <div id="opts" aria-labelledby="lbl-opts"></div>
+      <button type="button" class="add-opt" id="addOpt">+ Agregar opción</button>
+      <div class="err-msg" id="errOpts">Necesitas al menos 2 opciones con texto y marcar la(s) correcta(s).</div>
+    </div>
+
+    <!-- TRUEFALSE -->
+    <div class="field" id="tfBlock" style="display:none;">
+      <label id="lbl-tf">Respuesta correcta</label>
+      <div class="tf" id="tf" role="group" aria-labelledby="lbl-tf">
+        <button type="button" class="v" data-val="true" aria-pressed="true"><span aria-hidden="true">✓</span> Verdadero</button>
+        <button type="button" class="f" data-val="false" aria-pressed="false"><span aria-hidden="true">✗</span> Falso</button>
+      </div>
+    </div>
+
+    <!-- SHORT ANSWER -->
+    <div class="field" id="saBlock" style="display:none;">
+      <label id="lbl-sa">Respuestas aceptadas <span class="hint">— el estudiante escribe; se compara con estas. Usa * como comodín.</span></label>
+      <div id="saList" aria-labelledby="lbl-sa"></div>
+      <button type="button" class="add-opt" id="addSA">+ Agregar respuesta aceptada</button>
+      <label class="chk" style="margin-top:8px;font-weight:500;font-size:13px;">
+        <input type="checkbox" id="saCase"> Distinguir mayúsculas / minúsculas
+      </label>
+      <div class="err-msg" id="errSA">Agrega al menos una respuesta aceptada con texto y crédito 100%.</div>
+    </div>
+
+    <!-- NUMERICAL -->
+    <div class="field" id="numBlock" style="display:none;">
+      <label for="numAns">Respuesta numérica</label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:130px;">
+          <input type="text" id="numAns" placeholder="Ej. 42 o 3.14" inputmode="decimal">
+        </div>
+        <div style="flex:0 0 auto;">
+          <label for="numTol" style="font-weight:400;font-size:12px;margin-bottom:4px;">Tolerancia ±</label>
+          <input type="text" id="numTol" value="0" style="max-width:120px;" inputmode="decimal">
+        </div>
+      </div>
+      <div class="err-msg" id="errNum">Escribe una respuesta numérica válida.</div>
+      <div class="help tip">Usa punto como separador decimal. La tolerancia acepta respuestas dentro de ese margen.</div>
+    </div>
+
+    <!-- MATCHING -->
+    <div class="field" id="matchBlock" style="display:none;">
+      <label id="lbl-match">Parejas <span class="hint">— cada elemento de la izquierda se empareja con su respuesta. Mínimo 3.</span></label>
+      <div id="matchList" aria-labelledby="lbl-match"></div>
+      <button type="button" class="add-opt" id="addPair">+ Agregar pareja</button>
+      <div class="err-msg" id="errMatch">Necesitas al menos 3 parejas completas (elemento y respuesta).</div>
+    </div>
+
+    <!-- ESSAY -->
+    <div class="field" id="essayBlock" style="display:none;">
+      <div class="help">Pregunta abierta de desarrollo. No tiene respuesta automática: <b>se califica manualmente</b> en Moodle. Usa la retroalimentación general (abajo) para dar instrucciones a quien califica.</div>
+    </div>
+
+    <!-- Image -->
+    <div class="field">
+      <label id="lbl-img">Imagen <span class="hint">— opcional (JPG / PNG, máx. 1 MB)</span></label>
+      <input type="file" id="imgInput" accept="image/png,image/jpeg" style="display:none;" aria-labelledby="lbl-img">
+      <div id="imgArea"></div>
+    </div>
+
+    <details class="adv">
+      <summary>Opciones avanzadas (etiquetas, retroalimentación, puntaje, penalización)</summary>
+      <div style="padding-top:14px;">
+        <div class="field">
+          <label for="genfb">Retroalimentación general <span class="hint">— se muestra a todos tras responder</span></label>
+          <input type="text" id="genfb" placeholder="Opcional">
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;">
+          <div class="field" style="margin-bottom:0;">
+            <label for="grade">Puntaje</label>
+            <input type="number" id="grade" value="1" min="0" step="0.5" style="max-width:120px;">
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label for="penalty">Penalización por intento <span class="hint">(0–1)</span></label>
+            <input type="number" id="penalty" value="0" min="0" max="1" step="0.05" style="max-width:140px;">
+          </div>
+        </div>
+        <label class="chk" id="shuffleWrap" style="margin-top:14px;">
+          <input type="checkbox" id="shuffle" checked> Barajar el orden de opciones
+        </label>
+
+        <!-- Tags -->
+        <div class="field" style="margin-top:18px;border-top:1px dashed var(--line);padding-top:16px;margin-bottom:0;">
+          <label for="tagInput">Etiquetas <span class="hint">— objetivo, competencia, dificultad, nivel de Bloom. Enter o coma para agregar.</span></label>
+          <input type="text" id="tagInput" placeholder="Ej. Comprensión lectora, Grado 7">
+          <div class="chips" id="tagChips"></div>
+          <div class="quick-tags">
+            <span class="grp-lbl">Dificultad</span>
+            <button type="button" data-tag="Fácil">Fácil</button>
+            <button type="button" data-tag="Media">Media</button>
+            <button type="button" data-tag="Difícil">Difícil</button>
+          </div>
+          <div class="quick-tags">
+            <span class="grp-lbl">Bloom</span>
+            <button type="button" data-tag="Recordar">Recordar</button>
+            <button type="button" data-tag="Comprender">Comprender</button>
+            <button type="button" data-tag="Aplicar">Aplicar</button>
+            <button type="button" data-tag="Analizar">Analizar</button>
+            <button type="button" data-tag="Evaluar">Evaluar</button>
+            <button type="button" data-tag="Crear">Crear</button>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- PREVIEW -->
+    <div class="prev-box">
+      <div class="plabel">Vista previa (lo correcto se resalta solo para ti)</div>
+      <div id="preview" aria-hidden="true"></div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:18px;">
+      <button class="btn btn-primary btn-block" id="addBtn">Agregar a la lista</button>
+      <button class="btn btn-ghost" id="clearBtn" style="display:none;">Cancelar</button>
+    </div>
+  </section>
+
+  <!-- TRAY -->
+  <section class="card card-pad" aria-labelledby="h-tray">
+    <div class="tray-head">
+      <h2 class="section-h" id="h-tray" style="margin:0;"><span class="num">2</span> Mis preguntas</h2>
+      <span class="count-pill" id="count" aria-live="polite">0</span>
+    </div>
+
+    <div class="tray-list" id="tray"></div>
+
+    <div class="field" style="margin-top:18px;">
+      <label for="category">Nombre del archivo / categoría <span class="hint">— organiza el banco</span></label>
+      <input type="text" id="category" placeholder="Ej. Evaluacion_Lengua_8A">
+    </div>
+
+    <button class="btn btn-primary btn-block" id="downloadBtn" style="margin-bottom:10px;">⤓ Descargar XML para Moodle</button>
+    <button class="btn btn-ghost btn-block" id="wipeBtn">Vaciar lista</button>
+
+    <div class="io-row">
+      <button type="button" class="btn btn-ghost btn-sm" id="exportBtn">↧ Guardar respaldo (JSON)</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="importBtn">↥ Restaurar respaldo</button>
+      <input type="file" id="importInput" accept="application/json,.json" style="display:none;">
+    </div>
+
+    <div class="help">
+      <b>Cómo usarlo en Moodle:</b> entra a tu curso → <b>Banco de preguntas → Importar</b> → elige formato <b>"Moodle XML"</b> → sube el archivo. Luego crea un <b>Cuestionario</b> y agrega las preguntas desde el banco.
+    </div>
+    <div class="help tip">
+      <b>Respaldo:</b> el trabajo se guarda en este navegador. Usa <b>Guardar respaldo</b> para tener una copia (y llevarla a otro equipo). El XML es para Moodle; el JSON es para seguir editando aquí.
+    </div>
+  </section>
+
+</main>
+
+<!-- Passage manager dialog -->
+<dialog id="passageDlg" style="border:none;border-radius:14px;padding:0;max-width:560px;width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+  <form method="dialog" style="margin:0;">
+    <div style="padding:20px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;">
+      <h3 style="font-size:17px;">Lecturas / estímulos</h3>
+      <button class="btn btn-ghost btn-sm" value="close" type="submit">Cerrar</button>
+    </div>
+    <div style="padding:20px 22px;">
+      <div class="field">
+        <label for="pTitle">Título de la lectura</label>
+        <input type="text" id="pTitle" placeholder="Ej. Fragmento — 'El Principito'">
+      </div>
+      <div class="field">
+        <label for="pBody">Texto</label>
+        <div class="rt-tools" role="toolbar" aria-label="Formato de la lectura">
+          <button type="button" data-pcmd="bold" title="Negrita" aria-label="Negrita"><b>B</b></button>
+          <button type="button" data-pcmd="italic" title="Cursiva" aria-label="Cursiva"><i>I</i></button>
+        </div>
+        <div class="rt" id="pBody" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Texto de la lectura" data-ph="Pega o escribe el texto…"></div>
+      </div>
+      <button type="button" class="btn btn-primary btn-sm" id="savePassage">Guardar lectura</button>
+      <div style="margin-top:18px;" id="passageList"></div>
+    </div>
+  </form>
+</dialog>
+
+<!-- AI question generator dialog -->
+<dialog id="aiDlg" aria-labelledby="aiDlgTitle" style="border:none;border-radius:14px;padding:0;max-width:620px;width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+  <form method="dialog" style="margin:0;">
+    <div style="padding:20px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--surface);border-radius:14px 14px 0 0;z-index:1;">
+      <h3 id="aiDlgTitle" style="font-size:17px;">✨ Generar preguntas tipo ICFES con IA</h3>
+      <button class="btn btn-ghost btn-sm" value="close" type="submit">Cerrar</button>
+    </div>
+    <div style="padding:20px 22px;">
+
+      <!-- PASO 1 -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span class="ai-step">1</span>
+        <h4 style="font-size:15px;">Crea la instrucción para la IA</h4>
+      </div>
+      <p class="ai-note">
+        Completa los datos de abajo y la herramienta armará automáticamente una <b>instrucción (prompt)</b> que podrás pegar en una IA como ChatGPT, Claude o Gemini. Con ella, la IA generará preguntas <b>personalizadas según tu grado y tema</b>, pensadas bajo el <b>enfoque por competencias y la estructura tipo ICFES</b> (con contexto, distractores plausibles y única respuesta). Entre mejor describas cada campo, mejores serán las preguntas que recibas.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;">
+        <div class="field">
+          <label for="aiCount">Cantidad de preguntas</label>
+          <input type="number" id="aiCount" value="3" min="1" max="20">
+        </div>
+        <div class="field">
+          <label for="aiGrade">Grado</label>
+          <input type="text" id="aiGrade" placeholder="Ej. 9°">
+        </div>
+      </div>
+      <div class="field">
+        <label for="aiSubject">Asignatura</label>
+        <input type="text" id="aiSubject" placeholder="Ej. Ciencias Naturales">
+      </div>
+      <div class="field">
+        <label for="aiTopic">Tema o temas sugeridos</label>
+        <input type="text" id="aiTopic" placeholder="Ej. Genética Mendeliana, herencia y ADN">
+      </div>
+      <div class="field">
+        <label for="aiComp">Competencia(s) a evaluar <span class="hint">(opcional)</span></label>
+        <input type="text" id="aiComp" placeholder="Ej. Uso comprensivo del conocimiento científico">
+      </div>
+      <button type="button" class="btn btn-primary btn-block" id="aiCopyBtn">⧉ Copiar instrucción para la IA</button>
+      <p class="ai-note" style="margin-top:12px;">
+        <b>¿Qué sigue?</b> Da clic en el botón de arriba para copiar la instrucción, abre tu IA favorita (ChatGPT, Claude, Gemini…) y <b>pégala</b> allí. 💡 Antes de ejecutarla, te recomendamos <b>leerla y ajustarla</b> a tu gusto (por ejemplo, pedir un nivel de dificultad distinto o aclarar un tema) por si necesita cambios.
+      </p>
+
+      <!-- PASO 2 -->
+      <div style="display:flex;align-items:center;gap:10px;margin:24px 0 10px;padding-top:20px;border-top:1px dashed var(--line);">
+        <span class="ai-step">2</span>
+        <h4 style="font-size:15px;">Importa las preguntas</h4>
+      </div>
+      <p class="help" style="margin:0 0 14px;">
+        <b>1.</b> Pega la instrucción copiada en ChatGPT, Claude o Gemini. ·
+        <b>2.</b> Copia la respuesta completa de la IA y pégala en el recuadro de abajo. ·
+        <b>3.</b> Pulsa <b>Importar</b>.
+      </p>
+      <p class="ai-note" style="margin:0 0 16px;">
+        ⚠️ <b>La IA no es infalible.</b> Puede cometer errores, marcar una respuesta correcta equivocada o proponer distractores poco apropiados. Te recomendamos <b>revisar y ajustar cada pregunta</b> (desde la lista, con el botón <b>Editar</b>) antes de usarlas con tus estudiantes.
+      </p>
+      <div class="field">
+        <label for="aiPaste">Pega aquí la respuesta de la IA <span class="hint">(formato Aiken)</span></label>
+        <textarea id="aiPaste" rows="6" placeholder="¿Cuál es…?&#10;A) Opción uno&#10;B) Opción dos&#10;C) Opción tres&#10;D) Opción cuatro&#10;ANSWER: B" style="width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface);resize:vertical;line-height:1.45;"></textarea>
+      </div>
+      <button type="button" class="btn btn-primary btn-block" id="aiImportBtn">Importar preguntas</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Instrucciones de uso dialog -->
+<dialog id="helpDlg" aria-labelledby="helpDlgTitle" style="border:none;border-radius:14px;padding:0;max-width:640px;width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+  <form method="dialog" style="margin:0;">
+    <div style="padding:20px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--surface);border-radius:14px 14px 0 0;z-index:1;">
+      <h3 id="helpDlgTitle" style="font-size:17px;">📖 Instrucciones de uso</h3>
+      <button class="btn btn-ghost btn-sm" value="close" type="submit">Cerrar</button>
+    </div>
+    <div style="padding:20px 22px;" class="guide">
+      <p class="lead">Esta herramienta te ayuda a crear preguntas y descargarlas como un archivo <b>Moodle XML</b> que luego subes a tu curso. Todo se guarda solo en este navegador; no necesitas cuenta ni internet para usarla.</p>
+
+      <h4><span class="g-num">1</span> Crear pregunta</h4>
+      <p>Elige el <b>tipo de pregunta</b> (opción múltiple, verdadero/falso, respuesta corta, numérica, emparejar, huecos o ensayo). Escribe el <b>enunciado</b>, marca la(s) respuesta(s) correcta(s) y, si quieres, agrega una <b>imagen</b>, <b>etiquetas</b> o una <b>lectura/estímulo</b>. Cuando esté lista, pulsa <b>Agregar a la lista</b>. La vista previa de la derecha te muestra cómo se verá.</p>
+
+      <h4><span class="g-num">✨</span> Generar preguntas tipo ICFES con IA</h4>
+      <p>¿Quieres ahorrar tiempo? Este botón abre un asistente en dos pasos: <b>(1)</b> completas grado, asignatura y tema, y copias una instrucción lista para pegar en una IA (ChatGPT, Claude, Gemini); <b>(2)</b> pegas la respuesta de la IA y las preguntas entran solas a tu lista. Recuerda <b>revisar siempre</b> lo que genera la IA antes de exportar.</p>
+
+      <h4><span class="g-num">📖</span> Lecturas / estímulos</h4>
+      <p>Con <b>Gestionar lecturas</b> creas textos o fragmentos que varias preguntas pueden compartir (por ejemplo, un cuento o un caso). Luego asocias cada pregunta a su lectura desde el formulario.</p>
+
+      <h4><span class="g-num">2</span> Lista de preguntas</h4>
+      <p>Aquí se acumulan todas tus preguntas, las creadas a mano y las generadas con IA. Sobre cada una puedes <b>Editar</b> (hacer ajustes), <b>Duplicar</b> o <b>Eliminar</b>. Editar funciona igual para cualquier pregunta, venga de donde venga.</p>
+
+      <h4><span class="g-num">3</span> Descargar y respaldar</h4>
+      <p>El botón <b>Descargar XML</b> genera el archivo para Moodle. Para usarlo: entra a tu curso → <b>Banco de preguntas → Importar</b> → formato <b>"Moodle XML"</b> → sube el archivo. Con <b>Guardar respaldo (JSON)</b> conservas una copia para seguir editando aquí o pasarla a otro equipo; con <b>Restaurar respaldo</b> la recuperas.</p>
+
+      <p class="ai-note" style="margin-top:18px;"><b>Consejo:</b> el trabajo vive en este navegador. Si vas a cambiar de computador o limpiar el historial, guarda primero un respaldo JSON para no perder tus preguntas.</p>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- ===========================================================================
+     Lógica de la aplicación.
+     Se carga al final del <body> para que todos los elementos ya existan en el
+     DOM cuando el script se ejecute (evita errores de "null" al buscar nodos).
+     ======================================================================== -->
+<script src="js/main.js"></script>
+</body>
+</html>
