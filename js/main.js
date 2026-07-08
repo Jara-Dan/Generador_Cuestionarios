@@ -745,6 +745,81 @@
     toast('XML descargado · súbelo a tu banco de preguntas');
   };
 
+   // ---------- WORD EXPORT ----------
+  $('downloadWordBtn').onclick=function(){
+    if(!questions.length){ toast('Agrega al menos una pregunta',true); return; }
+    var catName = $('category').value.trim() || 'Evaluacion_Trendi';
+
+    // 1. Estructura base del documento Word
+    var wordContent = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">';
+    wordContent += '<head><meta charset="utf-8"><title>' + esc(catName) + '</title>';
+    wordContent += '<style>';
+    wordContent += 'body { font-family: "Arial", sans-serif; font-size: 11pt; color: #000; } ';
+    wordContent += 'h1 { text-align: center; font-size: 16pt; margin-bottom: 24px; } ';
+    wordContent += '.question { margin-bottom: 24px; page-break-inside: avoid; } ';
+    wordContent += '.passage { padding: 12px; border: 1px solid #ccc; margin-bottom: 12px; background: #f9f9f9; font-style: italic; }';
+    wordContent += '.opts { list-style-type: none; padding-left: 0; margin-top: 8px; } ';
+    wordContent += '.opts li { margin-bottom: 6px; } ';
+    wordContent += '</style></head><body>';
+    wordContent += '<h1>' + esc(catName.replace(/_/g, ' ')) + '</h1><hr><br>';
+
+    // 2. Iterar sobre cada pregunta guardada en la lista
+    questions.forEach(function(q, i) {
+      wordContent += '<div class="question">';
+      wordContent += '<p style="font-weight:bold; margin-bottom: 8px;">' + (i + 1) + '.</p>';
+
+      // A) Insertar lectura si la pregunta tiene una asociada
+      if(q.passageId) {
+        var pass = passages.find(function(p){return p.id===q.passageId;});
+        if(pass) wordContent += '<div class="passage">' + pass.html + '</div>';
+      }
+
+      // B) Insertar el enunciado (limpiando sintaxis cloze si aplica)
+      var stmtClean = q.type === 'cloze' ? q.statement.replace(/\[\[([^\]]+)\]\]/g, ' ________ ') : q.statement;
+      wordContent += '<div>' + stmtClean + '</div>';
+
+      // C) Insertar imagen si la tiene (se inserta en base64 para que Word la lea sin internet)
+      if(q.image) {
+        var mime = q.image.filename.slice(-3) === 'png' ? 'png' : 'jpeg';
+        wordContent += '<p><img src="data:image/' + mime + ';base64,' + q.image.base64 + '" style="max-width:100%;" alt="' + esc(q.image.alt) + '"></p>';
+      }
+
+      // D) Dibujar las opciones de respuesta según el tipo (Versión estudiante)
+      if(q.type === 'multichoice') {
+        wordContent += '<ul class="opts">';
+        q.opts.forEach(function(o) { wordContent += '<li>( &nbsp; ) ' + esc(o.text) + '</li>'; });
+        wordContent += '</ul>';
+      } else if (q.type === 'truefalse') {
+        wordContent += '<ul class="opts"><li>( &nbsp; ) Verdadero</li><li>( &nbsp; ) Falso</li></ul>';
+      } else if (q.type === 'shortanswer' || q.type === 'numerical' || q.type === 'cloze') {
+        wordContent += '<p><br>Respuesta: _________________________________________</p>';
+      } else if (q.type === 'matching') {
+        wordContent += '<ul class="opts">';
+        q.pairs.forEach(function(p) { wordContent += '<li>' + esc(p.q) + ' &nbsp; _______________________</li>'; });
+        wordContent += '</ul>';
+      } else if (q.type === 'essay') {
+        wordContent += '<p><br>___________________________________________________________________<br><br>___________________________________________________________________<br><br>___________________________________________________________________</p>';
+      }
+
+      wordContent += '</div>';
+    });
+
+    wordContent += '</body></html>';
+
+    // 3. Generar y descargar el archivo
+    var blob = new Blob(['\ufeff', wordContent], { type: 'application/msword' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = (catName.replace(/[^\w\-]+/g, '_')) + '.doc';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    
+    toast('Evaluación descargada en Word');
+  };
+   
   // ---------- Generador con IA ----------
   $('aiOpenBtn').onclick=function(){
     var d=$('aiDlg'); if(d.showModal) d.showModal(); else d.setAttribute('open','');
