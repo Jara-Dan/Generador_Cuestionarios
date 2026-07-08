@@ -787,7 +787,12 @@
       // D) Dibujar las opciones de respuesta según el tipo (Versión estudiante)
       if(q.type === 'multichoice') {
         wordContent += '<ul class="opts">';
-        q.opts.forEach(function(o) { wordContent += '<li>( &nbsp; ) ' + esc(o.text) + '</li>'; });
+        // Creamos un array con las letras para asignarlas automáticamente
+        var letras = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+        q.opts.forEach(function(o, index) { 
+            var letra = letras[index] || '•'; 
+            wordContent += '<li>' + letra + ') ' + esc(o.text) + '</li>'; 
+        });
         wordContent += '</ul>';
       } else if (q.type === 'truefalse') {
         wordContent += '<ul class="opts"><li>( &nbsp; ) Verdadero</li><li>( &nbsp; ) Falso</li></ul>';
