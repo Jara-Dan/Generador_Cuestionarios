@@ -1,0 +1,2 @@
+# Permisos locales de Claude Code: son de cada máquina, no del proyecto.
+.claude/settings.local.json
