@@ -805,18 +805,16 @@
       var thumb=document.createElement('div'); thumb.className='pair-thumb'+(p.image?' has-img':'');
       thumb.setAttribute('role','button'); thumb.tabIndex=0;
       thumb.title=p.image?'Cambiar imagen':'Agregar imagen al elemento (opcional)';
-      var fileInput=document.createElement('input'); fileInput.type='file'; fileInput.accept='image/png,image/jpeg'; fileInput.style.display='none';
+      var fileInput=document.createElement('input'); fileInput.type='file'; fileInput.accept='image/*'; fileInput.style.display='none';
       fileInput.onchange=function(e){
         var file=e.target.files[0]; if(!file) return;
-        if(file.size > 1024*1024){ toast('La imagen pesa '+(file.size/1048576).toFixed(1)+' MB. Máximo 1 MB — comprímela primero.', true); this.value=''; return; }
-        var r=new FileReader();
-        r.onload=function(){
-          var data=r.result; var b64=data.split(',')[1];
-          var ext = file.type==='image/png'?'png':'jpg';
-          p.image={ filename:'pair_'+Date.now()+'_'+Math.random().toString(36).slice(2,7)+'.'+ext, base64:b64, dataUrl:data, alt:'' };
+        var input=this;
+        readAsImage(file, function(err,res){
+          if(err){ toast(err,true); input.value=''; return; }
+          p.image=makeImage('pair',res);
           renderMatch(); renderPreview();
-        };
-        r.readAsDataURL(file);
+          if(res.resized) toast('La imagen se redujo automáticamente para que quepa (máx. 1 MB).');
+        });
       };
       if(p.image){
         var img=document.createElement('img'); img.src=p.image.dataUrl; img.alt='';
@@ -828,6 +826,15 @@
       thumb.onclick=function(){ fileInput.click(); };
       thumb.onkeydown=function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); fileInput.click(); } };
       thumbWrap.appendChild(thumb);
+      // El lienzo (Fase 3) también sirve aquí: el elemento de la izquierda admite
+      // imagen, así que un dibujo entra igual que un archivo cargado.
+      var dw=document.createElement('button'); dw.type='button'; dw.className='pair-thumb-draw';
+      dw.textContent = canKeepEditing(p.image) ? '✏️ Seguir' : '✏️ Dibujar';
+      dw.setAttribute('aria-label', (p.image?'Dibujar la imagen del elemento ':'Dibujar una imagen para el elemento ')+(i+1));
+      dw.onclick=function(){
+        openDrawDlg(p.image, function(img){ p.image=img; renderMatch(); renderPreview(); });
+      };
+      thumbWrap.appendChild(dw);
       if(p.image){
         var rm=document.createElement('button'); rm.type='button'; rm.className='pair-thumb-rm'; rm.textContent='Quitar';
         rm.setAttribute('aria-label','Quitar imagen del elemento '+(i+1));
@@ -876,25 +883,121 @@
   function updateGapCount(){ $('gapCount').textContent = countGaps(stmt.innerHTML); }
 
   // ---------- Image ----------
-  function bindDrop(){ var d=$('imgArea').querySelector('#imgDrop'); if(d) d.onclick=function(){ $('imgInput').click(); }; }
+  // Presupuesto de tamaño por imagen. localStorage son ~5 MB EN TOTAL y las
+  // imágenes en base64 lo llenan rapidísimo, así que 1 MB es el techo que ve el
+  // docente y se recomprime apuntando algo por debajo, para dejar margen.
+  var IMG_LIMIT   = 1024*1024;   // el límite que se le anuncia al docente
+  var IMG_TARGET  = 900*1024;    // objetivo al recomprimir
+  var IMG_MAX_DIM = 1400;        // ancho/alto máximo tras el reescalado
+
+  // Una foto de celular pesa 2–5 MB: antes se rechazaba sin más y el docente
+  // tenía que comprimirla por su cuenta. Ahora se reduce en un canvas y se
+  // recomprime hasta que entre en el presupuesto.
+  //
+  // Ojo con el formato: editQ() reconstruye el dataUrl a partir de la EXTENSIÓN
+  // del nombre de archivo, y Moodle también se guía por ella. Por eso una imagen
+  // que no sea PNG ni JPEG (webp, heic, la foto de un celular moderno) se
+  // reconvierte SIEMPRE — dejarla pasar con extensión .jpg y bytes de webp
+  // rompería el archivo dentro del XML.
+  //
+  // Llama a done(mensajeDeError) o done(null, {dataUrl, ext, resized}).
+  function fitImage(dataUrl, srcType, done){
+    var isPng = srcType==='image/png';
+    var known = isPng || srcType==='image/jpeg';
+    var bytes = b64Bytes(dataUrl);
+    var im = new Image();
+    im.onerror = function(){
+      done('El navegador no pudo leer esa imagen. Si es una foto de iPhone (HEIC), guárdala como JPG y vuelve a intentarlo.');
+    };
+    im.onload = function(){
+      var w=im.naturalWidth, h=im.naturalHeight;
+      if(!w || !h){ done('El navegador no pudo leer esa imagen.'); return; }
+
+      var scale = Math.min(1, IMG_MAX_DIM/Math.max(w,h));
+      // Ya venía bien y en un formato que Moodle entiende: no se toca.
+      if(scale===1 && known && bytes<=IMG_LIMIT){
+        done(null, {dataUrl:dataUrl, ext:isPng?'png':'jpg', resized:false}); return;
+      }
+
+      var cw=Math.max(1,Math.round(w*scale)), ch=Math.max(1,Math.round(h*scale));
+      var cv=document.createElement('canvas'); cv.width=cw; cv.height=ch;
+      var c=cv.getContext('2d');
+      if('imageSmoothingQuality' in c) c.imageSmoothingQuality='high';
+      // El JPEG no tiene transparencia: hay que aplanar sobre blanco, o lo
+      // transparente saldría negro.
+      c.fillStyle='#ffffff'; c.fillRect(0,0,cw,ch);
+      c.drawImage(im,0,0,cw,ch);
+
+      // El PNG conserva los bordes limpios de un diagrama; solo se cambia a
+      // JPEG si el PNG no cabe (una foto en PNG pesa muchísimo).
+      if(isPng){
+        var png=cv.toDataURL('image/png');
+        if(b64Bytes(png)<=IMG_TARGET){ done(null,{dataUrl:png,ext:'png',resized:true}); return; }
+      }
+      var qs=[0.85,0.7,0.55,0.4], out=null;
+      for(var i=0;i<qs.length;i++){
+        out=cv.toDataURL('image/jpeg',qs[i]);
+        if(b64Bytes(out)<=IMG_TARGET) break;
+      }
+      var finalBytes=b64Bytes(out);
+      if(finalBytes>IMG_LIMIT){
+        done('La imagen sigue pesando '+(finalBytes/1048576).toFixed(1)+' MB después de reducirla. Recórtala o usa una más pequeña.');
+        return;
+      }
+      done(null,{dataUrl:out,ext:'jpg',resized:true});
+    };
+    im.src=dataUrl;
+  }
+  // Tamaño real en bytes de un dataUrl, sin crear el Blob: cada 4 caracteres de
+  // base64 son 3 bytes.
+  function b64Bytes(dataUrl){
+    var b64=String(dataUrl).split(',')[1]||'';
+    return Math.round(b64.length*0.75);
+  }
+  // Lee el archivo elegido y lo deja listo para guardar (reescalado si hacía falta).
+  function readAsImage(file, done){
+    var r=new FileReader();
+    r.onerror=function(){ done('No se pudo leer el archivo.'); };
+    r.onload=function(){ fitImage(r.result, file.type, done); };
+    r.readAsDataURL(file);
+  }
+  // Arma el objeto imagen tal como lo espera el resto de la app (y buildXML()).
+  function makeImage(prefix, res){
+    return {
+      filename: prefix+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,7)+'.'+res.ext,
+      base64: res.dataUrl.split(',')[1],
+      dataUrl: res.dataUrl,
+      alt: ''
+    };
+  }
+
+  function bindDrop(){
+    var area=$('imgArea');
+    var d=area.querySelector('#imgDrop'); if(d) d.onclick=function(){ $('imgInput').click(); };
+    var w=area.querySelector('#imgDrawBtn');
+    if(w) w.onclick=function(){
+      openDrawDlg(state.image, function(img){ state.image=img; renderImg(); renderPreview(); });
+    };
+  }
   $('imgInput').onchange=function(e){
     var file=e.target.files[0]; if(!file) return;
-    if(file.size > 1024*1024){
-      toast('La imagen pesa '+(file.size/1048576).toFixed(1)+' MB. Máximo 1 MB — comprímela primero.', true);
-      this.value=''; return;
-    }
-    var r=new FileReader();
-    r.onload=function(){
-      var data=r.result; var b64=data.split(',')[1];
-      var ext = file.type==='image/png'?'png':'jpg';
-      state.image={ filename:'img_'+Date.now()+'.'+ext, base64:b64, dataUrl:data, alt:'' };
+    var input=this;
+    readAsImage(file, function(err,res){
+      if(err){ toast(err,true); input.value=''; return; }
+      state.image=makeImage('img',res);
       renderImg(); renderPreview();
-    };
-    r.readAsDataURL(file);
+      if(res.resized) toast('La imagen se redujo automáticamente para que quepa (máx. 1 MB).');
+    });
   };
   function renderImg(){
     var area=$('imgArea');
-    if(!state.image){ area.innerHTML='<div class="img-drop" id="imgDrop">Haz clic para cargar una imagen</div>'; bindDrop(); return; }
+    if(!state.image){
+      area.innerHTML='<div class="img-choose">'+
+        '<button type="button" class="img-drop" id="imgDrop">Haz clic para cargar una imagen o tomar una foto</button>'+
+        '<button type="button" class="img-draw" id="imgDrawBtn">✏️ Dibujar</button>'+
+      '</div>';
+      bindDrop(); return;
+    }
     area.innerHTML='';
     var wrap=document.createElement('div'); wrap.className='img-prev';
     var img=document.createElement('img'); img.src=state.image.dataUrl; img.alt='Vista previa de la imagen cargada';
@@ -902,11 +1005,347 @@
     var alt=document.createElement('input'); alt.type='text'; alt.placeholder='Texto alternativo — opcional, recomendado para accesibilidad';
     alt.setAttribute('aria-label','Texto alternativo de la imagen');
     alt.value=state.image.alt; alt.oninput=function(){ state.image.alt=alt.value; };
+    var draw=document.createElement('button'); draw.type='button'; draw.className='add-opt';
+    draw.textContent = canKeepEditing(state.image) ? '✏️ Seguir editando el dibujo' : '✏️ Dibujar otra';
+    draw.onclick=function(){
+      openDrawDlg(state.image, function(im2){ state.image=im2; renderImg(); renderPreview(); });
+    };
     var rm=document.createElement('button'); rm.type='button'; rm.className='add-opt'; rm.style.color='var(--danger)'; rm.textContent='Quitar imagen';
     rm.onclick=function(){ state.image=null; $('imgInput').value=''; renderImg(); renderPreview(); };
-    meta.appendChild(alt); meta.appendChild(rm);
+    meta.appendChild(alt); meta.appendChild(draw); meta.appendChild(rm);
     wrap.appendChild(img); wrap.appendChild(meta); area.appendChild(wrap);
   }
+
+  // ---------- Lienzo de dibujo (Fase 3) ----------
+  // El lienzo NO es un tipo de pregunta ni una salida nueva: es otro *productor*
+  // del mismo objeto imagen que ya produce el <input type="file"> de arriba
+  // ({filename, base64, dataUrl, alt}). Por eso NO hay que tocar buildXML(),
+  // editQ(), resetForm() ni el export a Word: un dibujo viaja a Moodle
+  // exactamente igual que un JPG cargado a mano.
+  //
+  // Decisión técnica clave: los trazos NO se pintan directo sobre el canvas. Se
+  // guardan como objetos en `drawShapes` y se redibuja TODO en cada cambio
+  // (redraw()). Eso da gratis tres cosas que de otro modo son un dolor:
+  //   1. Deshacer/rehacer = mover elementos entre dos arreglos.
+  //   2. La vista elástica mientras se arrastra una línea o una elipse.
+  //   3. Cambiar el fondo sin perder lo ya dibujado.
+  var DRAW_W=1000, DRAW_H=700, GRID=50;   // 1000/50 y 700/50 son enteros: el
+                                          // centro (500,350) cae sobre la cuadrícula.
+  var DRAW_TOOLS=[
+    {id:'pen',     glyph:'✏️', cap:'Lápiz — dibujo libre'},
+    {id:'line',    glyph:'╱',  cap:'Línea recta'},
+    {id:'arrow',   glyph:'→',  cap:'Flecha (vectores, señalar algo)'},
+    {id:'rect',    glyph:'▭',  cap:'Rectángulo'},
+    {id:'ellipse', glyph:'◯',  cap:'Elipse o círculo'},
+    {id:'text',    glyph:'A',  cap:'Texto — para rotular (A, B, 5 cm…)'}
+  ];
+  var DRAW_COLORS=[
+    {v:'#20251f', cap:'Negro'}, {v:'#cf4040', cap:'Rojo'}, {v:'#1d4ed8', cap:'Azul'},
+    {v:'#2f8f5b', cap:'Verde'}, {v:'#ee7623', cap:'Naranja'}
+  ];
+  var DRAW_WIDTHS=[{w:2,cap:'Fino'},{w:4,cap:'Medio'},{w:8,cap:'Grueso'}];
+
+  var drawShapes=[], drawUndone=[], drawLive=null;
+  var drawTool='pen', drawColor=DRAW_COLORS[0].v, drawWidth=4, drawBg='blank';
+  var drawCv=null, drawCtx=null, drawBarBuilt=false, drawOnDone=null;
+  // Permite reabrir y seguir dibujando DENTRO de la misma sesión. Los trazos no
+  // se guardan en localStorage a propósito (engordarían mucho el almacenamiento,
+  // que ya va justo con las imágenes): al recargar la página el dibujo queda
+  // como una imagen plana, ya no editable.
+  var drawMemo={image:null, shapes:null, bg:'blank'};
+  function canKeepEditing(img){ return !!(img && drawMemo.image===img && drawMemo.shapes); }
+
+  // --- Fondos ---
+  function drawBackground(c,kind){
+    if(kind==='blank') return;
+    c.save();
+    var fine='#e2eaf1', bold='#c3d1de', ink='#7a8895';
+    if(kind==='mm'){ gridLines(c,10,'#eef3f8'); gridLines(c,GRID,bold); }
+    else if(kind==='iso'){ isoLines(c,fine); }
+    else if(kind==='numline'){ /* la recta numérica va sobre blanco, sin cuadrícula */ }
+    else { gridLines(c,GRID,fine); }
+    if(kind==='axes') axesOverlay(c,ink);
+    if(kind==='numline') numLineOverlay(c,ink);
+    c.restore();
+  }
+  function gridLines(c,step,color){
+    c.strokeStyle=color; c.lineWidth=1; c.beginPath();
+    for(var x=0;x<=DRAW_W;x+=step){ c.moveTo(x+.5,0); c.lineTo(x+.5,DRAW_H); }
+    for(var y=0;y<=DRAW_H;y+=step){ c.moveTo(0,y+.5); c.lineTo(DRAW_W,y+.5); }
+    c.stroke();
+  }
+  function isoLines(c,color){
+    // Papel isométrico: verticales + dos familias a 30°.
+    var rise=Math.tan(Math.PI/6)*DRAW_W;
+    c.strokeStyle=color; c.lineWidth=1; c.beginPath();
+    for(var x=0;x<=DRAW_W;x+=GRID){ c.moveTo(x+.5,0); c.lineTo(x+.5,DRAW_H); }
+    var span=Math.ceil((DRAW_H+rise)/GRID)*GRID;
+    for(var k=-span;k<=span;k+=GRID){
+      c.moveTo(0,k); c.lineTo(DRAW_W,k+rise);
+      c.moveTo(0,k); c.lineTo(DRAW_W,k-rise);
+    }
+    c.stroke();
+  }
+  function arrowHead(c,x,y,ang,size){
+    var sp=Math.PI/7;
+    c.beginPath(); c.moveTo(x,y);
+    c.lineTo(x-size*Math.cos(ang-sp), y-size*Math.sin(ang-sp));
+    c.lineTo(x-size*Math.cos(ang+sp), y-size*Math.sin(ang+sp));
+    c.closePath(); c.fill();
+  }
+  function axesOverlay(c,color){
+    var cx=DRAW_W/2, cy=DRAW_H/2;
+    c.strokeStyle=color; c.fillStyle=color;
+    c.lineWidth=2; c.beginPath();
+    c.moveTo(0,cy); c.lineTo(DRAW_W,cy); c.moveTo(cx,0); c.lineTo(cx,DRAW_H); c.stroke();
+    c.lineWidth=1.5; c.beginPath();
+    for(var x=GRID;x<DRAW_W;x+=GRID){ if(x!==cx){ c.moveTo(x,cy-6); c.lineTo(x,cy+6); } }
+    for(var y=GRID;y<DRAW_H;y+=GRID){ if(y!==cy){ c.moveTo(cx-6,y); c.lineTo(cx+6,y); } }
+    c.stroke();
+    arrowHead(c,DRAW_W-1,cy,0,14);
+    arrowHead(c,cx,1,-Math.PI/2,14);
+    // Sin numerar los ejes a propósito: el docente pone su propia escala con la
+    // herramienta de texto, que es lo que cambia de un ejercicio a otro.
+    c.font='italic 700 21px "Hanken Grotesk",system-ui,sans-serif';
+    c.fillText('x', DRAW_W-24, cy-15);
+    c.fillText('y', cx+13, 21);
+    c.font='700 15px "Hanken Grotesk",system-ui,sans-serif';
+    c.fillText('0', cx-17, cy+19);
+  }
+  function numLineOverlay(c,color){
+    var y=DRAW_H/2, x0=70, x1=DRAW_W-70, n=20, step=(x1-x0)/n;
+    c.strokeStyle=color; c.fillStyle=color; c.lineWidth=2;
+    c.beginPath(); c.moveTo(x0-34,y); c.lineTo(x1+34,y); c.stroke();
+    arrowHead(c,x1+34,y,0,14); arrowHead(c,x0-34,y,Math.PI,14);
+    c.font='700 15px "Hanken Grotesk",system-ui,sans-serif';
+    c.textAlign='center';
+    for(var i=0;i<=n;i++){
+      var x=x0+i*step, v=i-n/2, big=(v===0||v%5===0);
+      c.lineWidth=big?2.5:1.5;
+      c.beginPath(); c.moveTo(x,y-(big?12:7)); c.lineTo(x,y+(big?12:7)); c.stroke();
+      if(big) c.fillText(String(v), x, y+32);
+    }
+    c.textAlign='start';
+  }
+
+  // --- Dibujo de las figuras ---
+  function drawShape(c,s){
+    c.save();
+    c.strokeStyle=s.color; c.fillStyle=s.color;
+    c.lineWidth=s.w||2; c.lineCap='round'; c.lineJoin='round';
+    if(s.tool==='pen'){
+      c.beginPath(); c.moveTo(s.pts[0][0],s.pts[0][1]);
+      for(var i=1;i<s.pts.length;i++) c.lineTo(s.pts[i][0],s.pts[i][1]);
+      c.stroke();
+    } else if(s.tool==='line'){
+      c.beginPath(); c.moveTo(s.x0,s.y0); c.lineTo(s.x1,s.y1); c.stroke();
+    } else if(s.tool==='arrow'){
+      c.beginPath(); c.moveTo(s.x0,s.y0); c.lineTo(s.x1,s.y1); c.stroke();
+      var dx=s.x1-s.x0, dy=s.y1-s.y0;
+      if(Math.sqrt(dx*dx+dy*dy)>1) arrowHead(c,s.x1,s.y1,Math.atan2(dy,dx),Math.max(12,(s.w||2)*3.4));
+    } else if(s.tool==='rect'){
+      c.beginPath();
+      c.rect(Math.min(s.x0,s.x1), Math.min(s.y0,s.y1), Math.abs(s.x1-s.x0), Math.abs(s.y1-s.y0));
+      c.stroke();
+    } else if(s.tool==='ellipse'){
+      c.beginPath();
+      c.ellipse((s.x0+s.x1)/2, (s.y0+s.y1)/2, Math.abs(s.x1-s.x0)/2, Math.abs(s.y1-s.y0)/2, 0, 0, Math.PI*2);
+      c.stroke();
+    } else if(s.tool==='text'){
+      c.font='700 '+Math.round(s.size)+'px "Hanken Grotesk",system-ui,sans-serif';
+      c.textBaseline='middle'; c.fillText(s.text, s.x, s.y);
+    }
+    c.restore();
+  }
+  function redraw(){
+    var c=drawCtx; if(!c) return;
+    c.setTransform(1,0,0,1,0,0);
+    c.fillStyle='#ffffff'; c.fillRect(0,0,DRAW_W,DRAW_H);
+    drawBackground(c,drawBg);
+    for(var i=0;i<drawShapes.length;i++) drawShape(c,drawShapes[i]);
+    if(drawLive) drawShape(c,drawLive);   // vista elástica de la figura en curso
+  }
+
+  // --- Puntero ---
+  // El canvas tiene 1000x700 internos pero se muestra escalado por CSS, así que
+  // hay que convertir las coordenadas de pantalla a las del canvas. Si no, el
+  // trazo aparece desplazado del cursor: es el error clásico de todo lienzo.
+  function drawPt(e){
+    var r=drawCv.getBoundingClientRect();
+    return {
+      x:(e.clientX-r.left)*(DRAW_W/r.width),
+      y:(e.clientY-r.top )*(DRAW_H/r.height)
+    };
+  }
+  function drawPush(s){ drawShapes.push(s); drawUndone.length=0; redraw(); drawSyncBtns(); }
+  function drawDown(e){
+    if(e.button!==undefined && e.button!==0) return;   // solo el botón principal
+    var p=drawPt(e);
+    if(drawTool==='text'){
+      var t=$('drawText').value.trim();
+      if(!t){
+        drawSay('Escribe primero el rótulo en la casilla «Texto por escribir» y luego toca el lienzo donde quieras ponerlo.', true);
+        $('drawText').focus(); return;
+      }
+      drawSay('');
+      drawPush({tool:'text', color:drawColor, size:14+drawWidth*3.5, x:p.x, y:p.y, text:t});
+      return;
+    }
+    drawLive = (drawTool==='pen')
+      ? {tool:'pen', color:drawColor, w:drawWidth, pts:[[p.x,p.y]]}
+      : {tool:drawTool, color:drawColor, w:drawWidth, x0:p.x, y0:p.y, x1:p.x, y1:p.y};
+    // Con captura, arrastrar fuera del canvas sigue funcionando.
+    if(drawCv.setPointerCapture && e.pointerId!==undefined){
+      try{ drawCv.setPointerCapture(e.pointerId); }catch(err){}
+    }
+    e.preventDefault();
+  }
+  function drawMove(e){
+    if(!drawLive) return;
+    var p=drawPt(e);
+    if(drawLive.tool==='pen') drawLive.pts.push([p.x,p.y]);
+    else { drawLive.x1=p.x; drawLive.y1=p.y; }
+    redraw(); e.preventDefault();
+  }
+  function drawEnd(){
+    if(!drawLive) return;
+    var s=drawLive; drawLive=null;
+    if(s.tool==='pen'){
+      // Un clic suelto con el lápiz debe dejar un punto, no desaparecer.
+      if(s.pts.length===1) s.pts.push([s.pts[0][0]+0.01, s.pts[0][1]+0.01]);
+    } else if(Math.abs(s.x1-s.x0)<3 && Math.abs(s.y1-s.y0)<3){
+      redraw(); return;    // un clic sin arrastrar: no se crea figura vacía
+    }
+    drawPush(s);
+  }
+
+  // --- Interfaz del diálogo ---
+  function drawSay(msg,err){
+    var m=$('drawMsg'); if(!m) return;
+    m.textContent=msg||'';
+    m.className='draw-msg'+(msg?' show':'')+(err?' err':'');
+  }
+  function drawSyncBtns(){
+    $('drawUndoBtn').disabled = !drawShapes.length;
+    $('drawRedoBtn').disabled = !drawUndone.length;
+    $('drawClearBtn').disabled = !drawShapes.length;
+  }
+  function drawPressGroup(box, activeBtn){
+    var bs=box.querySelectorAll('button');
+    for(var i=0;i<bs.length;i++) bs[i].setAttribute('aria-pressed', bs[i]===activeBtn ? 'true':'false');
+  }
+  function buildDrawBar(){
+    if(drawBarBuilt) return; drawBarBuilt=true;
+    var tools=$('drawTools');
+    DRAW_TOOLS.forEach(function(t){
+      var b=document.createElement('button'); b.type='button';
+      b.textContent=t.glyph; b.title=t.cap; b.setAttribute('aria-label',t.cap);
+      b.setAttribute('aria-pressed', t.id===drawTool ? 'true':'false');
+      b.onclick=function(){
+        drawTool=t.id; drawPressGroup(tools,b);
+        $('drawTextGrp').style.display = (t.id==='text') ? '' : 'none';
+        if(t.id==='text') $('drawText').focus();
+      };
+      tools.appendChild(b);
+    });
+    var cols=$('drawColors');
+    DRAW_COLORS.forEach(function(c){
+      var b=document.createElement('button'); b.type='button'; b.className='draw-sw';
+      b.style.background=c.v; b.title=c.cap; b.setAttribute('aria-label','Color '+c.cap);
+      b.setAttribute('aria-pressed', c.v===drawColor ? 'true':'false');
+      b.onclick=function(){ drawColor=c.v; drawPressGroup(cols,b); };
+      cols.appendChild(b);
+    });
+    var ws=$('drawWidths');
+    DRAW_WIDTHS.forEach(function(x){
+      var b=document.createElement('button'); b.type='button';
+      b.title=x.cap+' — también es el tamaño del texto';
+      b.setAttribute('aria-label','Trazo '+x.cap);
+      b.setAttribute('aria-pressed', x.w===drawWidth ? 'true':'false');
+      // Una muestra del grosor real dice más que la palabra.
+      var bar=document.createElement('span');
+      bar.style.cssText='display:block;width:17px;height:'+Math.max(2,x.w/1.6)+'px;border-radius:4px;background:currentColor;';
+      b.appendChild(bar);
+      b.onclick=function(){ drawWidth=x.w; drawPressGroup(ws,b); };
+      ws.appendChild(b);
+    });
+
+    drawCv=$('drawCanvas'); drawCtx=drawCv.getContext('2d');
+    drawCv.addEventListener('pointerdown', drawDown);
+    drawCv.addEventListener('pointermove', drawMove);
+    drawCv.addEventListener('pointerup',   drawEnd);
+    drawCv.addEventListener('pointercancel', drawEnd);
+    $('drawBgSel').onchange=function(){ drawBg=this.value; redraw(); };
+    // El diálogo es un <form method="dialog">: un Enter en la casilla de texto
+    // lo enviaría y cerraría el lienzo con todo lo dibujado sin insertar.
+    $('drawText').addEventListener('keydown', function(e){
+      if(e.key==='Enter'){ e.preventDefault(); }
+    });
+  }
+
+  function openDrawDlg(existing, onDone){
+    drawOnDone = onDone || null;
+    buildDrawBar();
+    if(canKeepEditing(existing)){
+      drawShapes = drawMemo.shapes.slice();
+      drawBg     = drawMemo.bg;
+      drawSay('Puedes seguir editando el dibujo que ya tiene esta casilla.');
+    } else {
+      drawShapes = [];
+      drawBg     = $('drawBgSel').value || 'blank';   // conserva el fondo elegido antes
+      drawSay('');
+    }
+    drawUndone=[]; drawLive=null;
+    $('drawBgSel').value=drawBg;
+    drawSyncBtns(); redraw();
+    var d=$('drawDlg');
+    if(d.showModal) d.showModal(); else d.setAttribute('open','');
+  }
+
+  $('drawUndoBtn').onclick=function(){
+    if(!drawShapes.length) return;
+    drawUndone.push(drawShapes.pop()); redraw(); drawSyncBtns(); drawSay('');
+  };
+  $('drawRedoBtn').onclick=function(){
+    if(!drawUndone.length) return;
+    drawShapes.push(drawUndone.pop()); redraw(); drawSyncBtns(); drawSay('');
+  };
+  $('drawClearBtn').onclick=function(){
+    if(!drawShapes.length) return;
+    // Al revés, para que «Rehacer» los vaya devolviendo en el orden original.
+    drawUndone=drawShapes.slice().reverse(); drawShapes=[];
+    redraw(); drawSyncBtns();
+    drawSay('Lienzo limpio. Si fue sin querer, «Rehacer» devuelve los trazos uno a uno.');
+  };
+  // Atajos de siempre. El aviso va inline porque el toast global quedaría tapado
+  // por el propio diálogo (ver CLAUDE.md).
+  $('drawDlg').addEventListener('keydown', function(e){
+    if(!(e.ctrlKey||e.metaKey)) return;
+    // Dentro de la casilla de texto, Ctrl+Z es el deshacer del propio campo.
+    var tn=(e.target.tagName||'').toLowerCase();
+    if(tn==='input'||tn==='select'||tn==='textarea') return;
+    var k=e.key.toLowerCase();
+    if(k==='z' && !e.shiftKey){ e.preventDefault(); $('drawUndoBtn').click(); }
+    else if(k==='y' || (k==='z' && e.shiftKey)){ e.preventDefault(); $('drawRedoBtn').click(); }
+  });
+
+  $('drawInsert').onclick=function(){
+    if(!drawShapes.length){
+      drawSay('El lienzo todavía está vacío: dibuja algo antes de insertarlo.', true); return;
+    }
+    var data=drawCv.toDataURL('image/png');   // PNG y no JPEG: el JPEG ensucia los bordes del trazo
+    var bytes=b64Bytes(data);
+    if(bytes>IMG_LIMIT){
+      drawSay('El dibujo pesa '+(bytes/1048576).toFixed(2)+' MB y el máximo es 1 MB. Usa un fondo más simple (el milimetrado es el que más pesa) o quita algunos trazos.', true);
+      return;
+    }
+    var img=makeImage('dib',{dataUrl:data, ext:'png'});
+    // Recordar los trazos permite volver a abrir y seguir dibujando esta imagen.
+    drawMemo={ image:img, shapes:drawShapes.slice(), bg:drawBg };
+    var d=$('drawDlg'); if(d.close) d.close(); else d.removeAttribute('open');
+    if(drawOnDone) drawOnDone(img);
+    toast('Dibujo insertado en la pregunta');   // ya sin diálogo abierto: el toast sí se ve
+  };
 
   // ---------- Tags ----------
   function addTag(t){ t=(t||'').trim(); if(!t) return; if(state.tags.indexOf(t)>-1) return; state.tags.push(t); renderTags(); }

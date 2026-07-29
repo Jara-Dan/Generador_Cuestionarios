@@ -255,11 +255,74 @@
   .quick-tags .grp-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);align-self:center;margin-right:2px;}
 
   /* Image */
-  .img-drop{border:2px dashed var(--line);border-radius:11px;padding:16px;text-align:center;color:var(--muted);font-size:14px;cursor:pointer;transition:all .15s;}
+  /* Dos entradas para la misma casilla: cargar un archivo o dibujar. El lienzo
+     produce exactamente el mismo objeto imagen que el <input type="file">. */
+  .img-choose{display:flex;gap:10px;align-items:stretch;}
+  .img-drop{flex:1;width:100%;border:2px dashed var(--line);border-radius:11px;padding:16px;text-align:center;color:var(--muted);font-size:14px;font-family:inherit;cursor:pointer;background:var(--surface);transition:all .15s;}
   .img-drop:hover{border-color:var(--accent);color:var(--accent-dark);background:var(--accent-soft);}
+  .img-draw{flex:0 0 auto;border:2px dashed var(--line);border-radius:11px;padding:16px 18px;color:var(--muted);font-size:14px;font-weight:600;white-space:nowrap;cursor:pointer;background:var(--surface);transition:all .15s;}
+  .img-draw:hover{border-color:var(--accent);color:var(--accent-dark);background:var(--accent-soft);}
   .img-prev{display:flex;gap:12px;align-items:flex-start;}
   .img-prev img{max-width:120px;max-height:90px;border-radius:8px;border:1px solid var(--line);}
   .img-prev .meta{flex:1;}
+  .img-prev .meta .add-opt{margin-right:12px;}
+  @media (max-width:520px){ .img-choose{flex-direction:column;} }
+
+  /* ==========================================================================
+     LIENZO DE DIBUJO (Fase 3)
+     El canvas tiene resolución interna fija (1000x700) y se muestra escalado por
+     CSS con width:100%. Por eso el JS mapea el punto del puntero con
+     getBoundingClientRect() -> si no, el trazo saldría desplazado del cursor.
+     `touch-action:none` es obligatorio: sin él la página se desplaza al dibujar
+     con el dedo y no llega ningún pointermove.
+     ========================================================================== */
+  .draw-bar{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;padding:12px 14px;
+    border:1px solid var(--line);border-radius:11px;background:var(--surface-2);margin-bottom:12px;}
+  .draw-grp{display:flex;flex-direction:column;gap:6px;}
+  .draw-grp .lbl{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+  .draw-grp .lbl label{display:inline;font-size:inherit;font-weight:inherit;letter-spacing:inherit;color:inherit;margin:0;}
+  .draw-grp .row{display:flex;gap:5px;align-items:center;}
+  .draw-grp .row button{min-width:36px;height:36px;padding:0 9px;border:1px solid var(--line);border-radius:8px;
+    background:var(--surface);font-size:15px;font-weight:600;color:var(--ink);
+    display:flex;align-items:center;justify-content:center;transition:all .15s;}
+  .draw-grp .row button:hover{border-color:var(--accent);background:var(--accent-soft);}
+  .draw-grp .row button[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-dark);}
+  /* Muestras de color: el color va en el fondo, así que el estado activo se
+     marca con un halo y no cambiando el fondo.
+     Los selectores llevan .draw-grp .row delante a propósito: con solo .draw-sw
+     la regla de arriba (más específica) ganaba en el alto y las muestras salían
+     ovaladas en vez de redondas. */
+  .draw-grp .row .draw-sw{width:30px;min-width:30px;height:30px;padding:0;border-radius:50%;border:2px solid var(--line);}
+  .draw-grp .row .draw-sw:hover{border-color:var(--ink);}
+  .draw-grp .row .draw-sw[aria-pressed=true]{border-color:var(--ink);box-shadow:0 0 0 3px var(--accent-soft);}
+  #drawBgSel{max-width:100%;height:36px;}
+  #drawText{width:160px;padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);font-size:14px;}
+  .draw-stage{border:1px solid var(--line);border-radius:11px;overflow:hidden;background:#fff;}
+  #drawCanvas{display:block;width:100%;height:auto;touch-action:none;cursor:crosshair;}
+  /* La confirmación y los errores del lienzo viven DENTRO del diálogo: un
+     <dialog> abierto se pinta en la capa superior y taparía el #toast global. */
+  .draw-msg{display:none;font-size:13px;margin-top:10px;padding:9px 12px;border-radius:9px;
+    background:var(--accent-soft);color:var(--accent-dark);border:1px solid var(--line);}
+  .draw-msg.show{display:block;}
+  .draw-msg.err{background:var(--danger-soft);color:var(--danger);border-color:var(--danger);font-weight:600;}
+  .draw-actions{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin-top:14px;}
+  .draw-actions .btn-primary{margin-right:auto;}
+  .pair-thumb-draw{font-size:12px;font-weight:700;color:var(--accent-dark);background:none;border:none;cursor:pointer;padding:3px 7px;border-radius:6px;white-space:nowrap;}
+  .pair-thumb-draw:hover{background:var(--accent-soft);text-decoration:underline;}
+  /* En un teléfono la barra se comía la pantalla (un grupo por fila) y dejaba el
+     lienzo muy estrecho. Apretándola, los grupos comparten fila y el dibujo gana
+     el espacio, que es lo que el docente necesita ver. */
+  @media (max-width:560px){
+    .draw-bar{gap:9px 11px;padding:10px;}
+    .draw-grp{gap:4px;}
+    .draw-grp .lbl{font-size:9.5px;}
+    .draw-grp .row{gap:4px;}
+    .draw-grp .row button{min-width:34px;height:34px;padding:0 6px;}
+    .draw-grp .row .draw-sw{width:26px;min-width:26px;height:26px;}
+    #drawBgSel{height:34px;font-size:13.5px;}
+    #drawText{width:118px;font-size:13.5px;}
+    .draw-actions .btn-primary{margin-right:0;width:100%;}
+  }
 
   /* Advanced */
   details.adv{margin-top:6px;border-top:1px dashed var(--line);padding-top:14px;}

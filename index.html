@@ -343,8 +343,8 @@
 
     <!-- Image -->
     <div class="field">
-      <label id="lbl-img">Imagen <span class="hint">— opcional (JPG / PNG, máx. 1 MB)</span></label>
-      <input type="file" id="imgInput" accept="image/png,image/jpeg" style="display:none;" aria-labelledby="lbl-img">
+      <label id="lbl-img">Imagen <span class="hint">— opcional: cárgala, tómale una foto o dibújala</span></label>
+      <input type="file" id="imgInput" accept="image/*" style="display:none;" aria-labelledby="lbl-img">
       <div id="imgArea"></div>
     </div>
 
@@ -509,6 +509,74 @@
       <div class="help tip" id="fxOffline" style="display:none;color:var(--danger);">
         No se pudo cargar el editor de fórmulas (¿sin conexión?). Puedes seguir
         escribiendo el código LaTeX a mano entre <b>\(</b> y <b>\)</b>.
+      </div>
+
+    </div>
+  </form>
+</dialog>
+
+<!-- Drawing canvas dialog (Fase 3) -->
+<dialog id="drawDlg" aria-labelledby="drawDlgTitle" style="border:none;border-radius:14px;padding:0;max-width:860px;width:96vw;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+  <form method="dialog" style="margin:0;">
+    <div style="padding:20px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--surface);border-radius:14px 14px 0 0;z-index:1;">
+      <h3 id="drawDlgTitle" style="font-size:17px;">✏️ Dibujar una imagen</h3>
+      <button class="btn btn-ghost btn-sm" value="close" type="submit">Cerrar</button>
+    </div>
+    <div style="padding:18px 22px;">
+
+      <div class="help tip" style="margin-top:0;">
+        Elige un <b>fondo</b> (cuadrícula, plano cartesiano…), una <b>herramienta</b> y dibuja
+        arrastrando sobre el lienzo. Puedes usar el ratón, el dedo o un lápiz digital.
+        Si te equivocas, usa <b>Deshacer</b>. Al insertarlo, el dibujo entra como una
+        imagen normal de la pregunta.
+      </div>
+
+      <div class="draw-bar">
+        <div class="draw-grp">
+          <span class="lbl" id="lbl-drawTool">Herramienta</span>
+          <div class="row" id="drawTools" role="group" aria-labelledby="lbl-drawTool"></div>
+        </div>
+        <div class="draw-grp">
+          <span class="lbl" id="lbl-drawColor">Color</span>
+          <div class="row" id="drawColors" role="group" aria-labelledby="lbl-drawColor"></div>
+        </div>
+        <div class="draw-grp">
+          <span class="lbl" id="lbl-drawWidth">Trazo</span>
+          <div class="row" id="drawWidths" role="group" aria-labelledby="lbl-drawWidth"></div>
+        </div>
+        <div class="draw-grp">
+          <span class="lbl"><label for="drawBgSel">Fondo</label></span>
+          <div class="row">
+            <select id="drawBgSel">
+              <option value="blank">Blanco</option>
+              <option value="grid">Cuadrícula</option>
+              <option value="axes">Plano cartesiano</option>
+              <option value="numline">Recta numérica</option>
+              <option value="mm">Papel milimetrado</option>
+              <option value="iso">Cuadrícula isométrica</option>
+            </select>
+          </div>
+        </div>
+        <div class="draw-grp" id="drawTextGrp" style="display:none;">
+          <span class="lbl"><label for="drawText">Texto por escribir</label></span>
+          <div class="row">
+            <input type="text" id="drawText" placeholder="Ej. A, 5 cm" maxlength="40">
+          </div>
+        </div>
+      </div>
+
+      <div class="draw-stage">
+        <canvas id="drawCanvas" width="1000" height="700"
+                role="img" aria-label="Lienzo de dibujo. Arrastra el puntero para dibujar."></canvas>
+      </div>
+
+      <div class="draw-msg" id="drawMsg" role="status"></div>
+
+      <div class="draw-actions">
+        <button type="button" class="btn btn-primary btn-lg" id="drawInsert">Insertar en mi pregunta</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="drawUndoBtn" title="Deshacer (Ctrl+Z)">↶ Deshacer</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="drawRedoBtn" title="Rehacer (Ctrl+Y)">↷ Rehacer</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="drawClearBtn">Limpiar todo</button>
       </div>
 
     </div>

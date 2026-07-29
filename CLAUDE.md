@@ -45,7 +45,11 @@ Es fácil olvidar uno y que el bug aparezca después:
 ## Imágenes
 
 - Se guardan en base64 dentro del objeto de la pregunta. Límite de 1 MB por imagen
-  (localStorage son ~5 MB en total y las imágenes lo llenan rápido).
+  (localStorage son ~5 MB en total y las imágenes lo llenan rápido). Desde la Fase 3
+  las que se pasan **se reescalan solas** en vez de rechazarse; ver más abajo.
+- Hay **dos productores** del objeto imagen: el `<input type="file">` y el lienzo de
+  dibujo. Los dos pasan por `makeImage()` y entregan la misma forma, así que el resto
+  de la app no distingue de dónde vino.
 - En el XML van con la ruta mágica `@@PLUGINFILE@@/<archivo>` en el HTML **más** una
   etiqueta `<file name="…" path="/" encoding="base64">` hermana, dentro del mismo
   elemento (`<questiontext>` para la imagen general, `<subquestion>` para las de
@@ -83,7 +87,7 @@ agrupador no se pierda la selección.
 |---|---|---|
 | 1 | Grupo "Matemáticas" + `numerical` completo (varias respuestas con crédito parcial, tolerancia por respuesta, unidades, comodín `*`) | **Hecho** |
 | 2 | Editor de fórmulas con cuadros vacíos (MathLive) + vista previa que renderice | **Hecho** |
-| 3 | Lienzo de dibujo y cámara → imagen (sin OCR) | Pendiente |
+| 3 | Lienzo de dibujo (6 fondos) + reescalado automático de fotos. **Sin cámara propia**, ver abajo | **Hecho, pero ver "Pendiente real de Fase 3" abajo — no cumple el objetivo original** |
 | 4 | `calculated` / `calculatedmulti` con datasets | **Hecho y confirmado en Moodle** |
 | 5 | Fórmulas en el export a Word y huecos `NUMERICAL` en cloze | Pendiente |
 | 6 | **Formato de examen impreso** en el Word (escudo + encabezado editable) | Pendiente |
@@ -125,6 +129,102 @@ Detalles de MathLive que costaron descubrir:
 - `\placeholder{}` **no existe en MathJax**. Si queda alguno sin llenar, Moodle mostraría
   un error, así que la inserción se bloquea. Para un hueco intencional está la plantilla
   «Espacio en blanco», que usa `\underline{\hspace{…}}` (TeX base, sin depender de AMS).
+
+### Lienzo de dibujo (Fase 3)
+
+**El lienzo no es un tipo de pregunta ni una salida nueva: es otro *productor* del
+mismo objeto imagen** que ya producía el `<input type="file">`
+(`{filename, base64, dataUrl, alt}`). Por eso **no hubo que tocar `buildXML()`,
+`editQ()`, `resetForm()` ni el export a Word** — y por eso el checklist de 6 puntos
+no aplica aquí. Un dibujo viaja a Moodle exactamente igual que un JPG cargado a mano.
+Si algún día se agrega otro productor de imágenes (p. ej. el escudo de la Fase 6),
+lo mismo vale: basta con devolver ese objeto y llamar a `makeImage()`.
+
+`openDrawDlg(existing, onDone)` es reutilizable, al estilo de `openFxDlg`. Está
+enganchado en dos sitios: la imagen general (`#imgArea`) y el elemento izquierdo del
+emparejamiento (`.pair-thumb-draw`), que también admite imagen.
+
+Decisiones que hay que respetar:
+
+- **Los trazos NO se pintan directo sobre el canvas.** Se guardan como objetos en
+  `drawShapes` y se redibuja todo en cada cambio (`redraw()`). Eso da gratis el
+  deshacer/rehacer, la vista elástica al arrastrar una figura, y cambiar el fondo
+  sin perder lo dibujado. Si alguien lo "optimiza" pintando directo, pierde las tres.
+- **Sin librerías** (Fabric.js, Konva): serían ~200 KB para usar el 5 %.
+- **Pointer Events**, no eventos de ratón: un solo camino cubre ratón, dedo y lápiz.
+  `touch-action:none` en el canvas es **obligatorio** — sin él la página se desplaza
+  al dibujar con el dedo y no llega ningún `pointermove`.
+- El canvas tiene **1000×700 internos** y se muestra escalado por CSS, así que
+  `drawPt()` convierte las coordenadas con `getBoundingClientRect()`. Sin esa
+  conversión el trazo sale desplazado del cursor: es el error clásico de todo lienzo.
+  Verificado: un trazo del 25 % al 75 % del ancho en pantalla cae exacto en x=250…750.
+- Se exporta en **PNG, no JPEG**: el JPEG ensucia los bordes del trazo.
+- **Los trazos no se guardan en localStorage** a propósito (engordarían mucho el
+  almacenamiento, que ya va justo con las imágenes). `drawMemo` los recuerda solo
+  durante la sesión: se puede reabrir y seguir dibujando, pero **al recargar la
+  página el dibujo queda como imagen plana** y el botón pasa de «Seguir editando el
+  dibujo» a «Dibujar otra». Es intencional y está comprobado.
+- El plano cartesiano **no se numera**: la escala cambia en cada ejercicio, así que la
+  pone el docente con la herramienta de texto.
+- Los avisos del lienzo van **inline dentro del diálogo** (`#drawMsg`), nunca por
+  toast — ver la sección del toast más abajo. El «Dibujo insertado» sí es un toast,
+  pero se lanza **después** de cerrar el diálogo.
+
+Tamaños medidos (el límite es 1 MB): un dibujo normal ronda los **20–40 KB**. El peor
+caso realista —papel milimetrado, el fondo más pesado, más 120 garabatos gruesos— dio
+**325 KB**. En la práctica el docente no va a topar con el techo.
+
+### Pendiente real de Fase 3 (descubierto el 2026-07-29, tarde)
+
+**Ojo: lo que hay hoy NO es lo que se pidió originalmente.** El `CLAUDE.md` describía
+la Fase 3 como "lienzo de dibujo y cámara → imagen (sin OCR)", y eso es lo que se
+construyó: un lienzo que produce una imagen estática, igual que cargar un JPG.
+
+Pero Daniel aclaró que en una sesión anterior (que nunca quedó documentada aquí) se
+había hablado de algo distinto y más ambicioso: un módulo de **"Escritura a mano /
+Tablet"** que cumpliera con la experiencia de **Mathpix Snip** — es decir, que el
+lienzo no se quede en imagen, sino que **reconozca la fórmula escrita a mano y la
+convierta a LaTeX/MathML**, insertándola como un bloque `span.fx` normal (el mismo
+formato de la Fase 2), no como una imagen.
+
+Esto es un problema de reconocimiento de escritura matemática (HWR), no un simple
+canvas. Se evaluaron las opciones reales el 2026-07-29:
+
+| Opción | Calidad | Costo/arquitectura |
+|---|---|---|
+| **API de Mathpix + proxy serverless** | La única que da de verdad la experiencia Mathpix Snip (es su motor) | Rompe la invariante "100 % en el navegador, sin backend": necesita una función serverless mínima (Cloudflare Worker o similar) para no exponer la API key. Tiene costo si se supera el nivel gratuito de Mathpix. |
+| Modelo abierto en el navegador (ONNX/TF.js, CROHME) | Notablemente peor que Mathpix con letra desprolija de docente/estudiante | Sigue 100 % estático y sin costo, pero es semanas de trabajo real (entrenar/adaptar modelo, convertirlo, cargar decenas de MB de pesos) |
+| Cada docente con su propia key de Mathpix | Misma calidad que la opción 1 | Sin backend propio, pero fricción de registro alta — probablemente pocos docentes lo hacen |
+
+**Decisión de Daniel (2026-07-29): no seguir con esto por ahora.** El lienzo actual
+(dibujo → imagen) queda como está, funcionando como plan B universal para fórmulas
+cuando MathJax no esté activo en el Moodle de destino. Retomar el reconocimiento de
+escritura a mano es una decisión pendiente que solo la puede tomar Daniel, porque
+implica costo recurrente y añadir el único componente de backend del proyecto.
+
+**Antes de tocar esto de nuevo:** confirmar con Daniel cuál de las tres rutas de la
+tabla prefiere, no asumir ninguna.
+
+### Reescalado automático de imágenes (Fase 3)
+
+Antes, una foto de celular (2–5 MB) **se rechazaba** y el docente tenía que
+comprimirla por su cuenta. Ahora `fitImage()` la reduce a 1400 px de lado máximo y la
+recomprime hasta entrar. Por eso el `accept` de los inputs es `image/*`: en el móvil
+eso ya ofrece **«Tomar foto»** de forma nativa, que es mejor interfaz que cualquier
+`getUserMedia` que programemos. **Esa es la razón por la que no hay cámara propia** —
+no es un olvido de la Fase 3.
+
+**Trampa importante: la extensión del archivo tiene que casar con los bytes reales.**
+`editQ()` reconstruye el `dataUrl` a partir de la extensión, el export a Word deriva
+el MIME de ella (`filename.slice(-3)`), y Moodle también se guía por ella. Así que
+`fitImage()` **reconvierte siempre** cualquier formato que no sea PNG ni JPEG: dejar
+pasar un `.webp` renombrado a `.jpg` metería bytes de webp en el XML con extensión
+mentirosa y Moodle importaría la imagen rota. Solo se salta el reescalado cuando el
+formato ya es PNG/JPEG **y** cabe en medidas **y** en peso.
+
+Comprobado midiendo: PNG de 3,74 MB → JPEG de 0,53 MB a 1400×969; webp pequeño y
+dentro de medidas → reconvertido a `.jpg` (no pasa tal cual); y en el XML resultante
+la firma de bytes de cada `<file>` coincide con su extensión.
 
 ### Preguntas calculadas (Fase 4)
 
@@ -331,8 +431,10 @@ que queda absurdo. El formulario de la Fase 4 **debe dejar que el docente elija 
 decimales** (0 para enteros, 2 para dinero o física).
 
 Cuidado con generalizar: que MathJax esté activo en el Moodle de Daniel no significa
-que lo esté en el de otra institución. Por eso la Fase 3 (fórmula como imagen) sigue
-siendo el plan B universal.
+que lo esté en el de otra institución. El plan B universal es una imagen, y el lienzo
+de la Fase 3 ya lo permite a mano (el docente dibuja la expresión). Convertir una
+fórmula de MathLive a imagen automáticamente **sigue sin hacerse**: si algún día hace
+falta, el sitio donde engancharlo es `serializeMath()`.
 
 ### Sobre el LaTeX y MathJax
 
