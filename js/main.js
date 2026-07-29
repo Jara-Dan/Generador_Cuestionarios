@@ -1745,6 +1745,17 @@
     var d=$('helpDlg'); if(d.showModal) d.showModal(); else d.setAttribute('open','');
   };
 
+  // Asignatura: lista de materias comunes + "Otra…" con campo libre. #aiSubject sigue
+  // siendo el campo que buildAIPrompt() lee; el <select> solo lo alimenta.
+  var aiSubjectSel=$('aiSubjectSel'), aiSubjectInp=$('aiSubject');
+  aiSubjectSel.onchange=function(){
+    if(this.value==='__otra__'){
+      aiSubjectInp.style.display='block'; aiSubjectInp.value=''; aiSubjectInp.focus();
+    } else {
+      aiSubjectInp.style.display='none'; aiSubjectInp.value=this.value;
+    }
+  };
+
   function buildAIPrompt(){
     var n=parseInt($('aiCount').value,10); if(isNaN(n)||n<1) n=3; if(n>20) n=20;
     var grado=$('aiGrade').value.trim()||'(no especificado)';
@@ -1781,10 +1792,25 @@
       return done;
     }catch(e){ return false; }
   }
-  $('aiCopyBtn').onclick=function(){
+  // El toast global vive fuera del <dialog>; los navegadores pintan un <dialog>
+  // abierto en una capa por encima de TODO el documento (por eso ningún z-index lo
+  // supera), así que con el modal abierto el toast queda tapado y el docente no ve
+  // ningún aviso. La confirmación tiene que vivir DENTRO del propio botón, que es lo
+  // único que se garantiza visible justo donde el docente ya está mirando.
+  var aiCopyBtn=$('aiCopyBtn'), aiCopyLabel=aiCopyBtn.textContent, aiCopyT=null;
+  function showCopied(ok){
+    clearTimeout(aiCopyT);
+    aiCopyBtn.textContent = ok ? '✓ ¡Copiado! Pégalo en tu IA' : '✗ No se pudo copiar, intenta de nuevo';
+    aiCopyBtn.classList.toggle('copied', ok);
+    aiCopyBtn.classList.toggle('copy-fail', !ok);
+    aiCopyT=setTimeout(function(){
+      aiCopyBtn.textContent=aiCopyLabel; aiCopyBtn.classList.remove('copied','copy-fail');
+    }, 2200);
+  }
+  aiCopyBtn.onclick=function(){
     var txt=buildAIPrompt();
-    var ok=function(){ toast('Instrucción copiada · pégala en tu IA favorita'); };
-    var ko=function(){ toast('No se pudo copiar automáticamente. Intenta de nuevo.', true); };
+    var ok=function(){ showCopied(true); };
+    var ko=function(){ showCopied(false); };
     if(navigator.clipboard && navigator.clipboard.writeText){
       navigator.clipboard.writeText(txt).then(ok, function(){ legacyCopy(txt)?ok():ko(); });
     } else { legacyCopy(txt)?ok():ko(); }

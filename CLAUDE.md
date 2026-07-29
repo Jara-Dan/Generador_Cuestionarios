@@ -89,8 +89,15 @@ agrupador no se pierda la selección.
 | 6 | **Formato de examen impreso** en el Word (escudo + encabezado editable) | Pendiente |
 | 7 | Botón **«Novedades»** con los cambios de cada versión | Pendiente |
 | 8 | **Buzón de sugerencias** para que los docentes escriban a Daniel | Pendiente |
+| 9 | **Generador con IA: LaTeX → fórmula visual** al importar | Pendiente |
 
-Las fases 6, 7 y 8 las pidió Daniel el 2026-07-29; el detalle está más abajo.
+Las fases 6, 7 y 8 las pidió Daniel el 2026-07-29; el detalle está más abajo. La fase 9
+se agregó el mismo día en una sesión posterior.
+
+**Fases 5 y 6 van juntas en una sola sesión de trabajo:** las dos tocan el mismo export
+a Word (una le agrega fórmulas, la otra el encabezado/escudo). Separarlas obligaría a
+tocar la misma función `exportWordBtn` dos veces y a probar la impresión dos veces.
+Abordarlas en la misma sesión, no en sesiones distintas.
 
 ### Cómo se guarda una fórmula (Fase 2)
 
@@ -183,6 +190,20 @@ que la ausencia no se lea como un fallo.
 El modal de fórmulas es reutilizable: `openFxDlg(target, onDone)` recibe el
 `contenteditable` destino y un callback para volcar el resultado al estado.
 
+## El toast global no sirve dentro de un `<dialog>` abierto
+
+Hallazgo del 2026-07-29, verificado midiendo coordenadas: cualquier `<dialog>` abierto
+con `showModal()` se pinta en la **capa superior** del navegador, por encima de TODO el
+documento, sin importar el `z-index` de nada más. El `#toast` vive fuera de los
+diálogos, así que con un modal abierto el aviso queda **tapado por el propio cuadro**.
+
+Regla para el futuro: **cualquier confirmación dentro de un diálogo debe vivir dentro
+del diálogo** (cambiar el texto/color de un botón, un mensaje inline), nunca depender
+del toast global. Ya se corrigió para "Copiar instrucción para la IA" (`aiCopyBtn`
+cambia de texto y de color en vez de lanzar un toast). Si se agregan más acciones
+dentro de `aiDlg`, `passageDlg`, `fxDlg` o `helpDlg` que necesiten confirmación visual,
+aplicar el mismo patrón.
+
 ## Fases pendientes: qué pidió Daniel exactamente
 
 Anotado el 2026-07-29 para que no se pierda entre sesiones. Nada de esto está empezado.
@@ -228,6 +249,52 @@ Recomendación de partida: **Formspree** si se quiere que se sienta parte de la 
 **Formulario de Google** si se prefiere cero mantenimiento. En cualquier caso, **no se
 puede ocultar una clave de API en un sitio estático** — hay que elegir un servicio cuyo
 endpoint sea público por diseño. Decidirlo con Daniel antes de programar nada.
+
+### Fase 9 — Generador con IA: que reconozca LaTeX al importar
+
+Pedido el 2026-07-29, en una sesión posterior a las fases 6/7/8. Hoy el flujo es:
+
+1. `buildAIPrompt()` arma un texto que le pide a la IA formato Aiken plano (enunciado,
+   `A) B) C) D)`, `ANSWER: X`), sin mencionar fórmulas.
+2. El docente pega la respuesta y `parseAiken()` la trocea en preguntas.
+3. `importAiken()` escapa el enunciado línea a línea con `esc()` y las opciones quedan
+   como texto plano — **cualquier LaTeX que la IA hubiera escrito llegaría como código
+   crudo**, no como una fórmula dibujada.
+
+Lo que pidió Daniel: cuando la pregunta sea de matemáticas, que el prompt le pida a la
+IA usar LaTeX (`\( … \)`) para las fórmulas, y que **al importar, la app reconozca esos
+delimitadores y los convierta sola** en los mismos bloques `<span class="fx"
+data-latex="…">` que genera el editor manual (Fase 2) — tanto en el enunciado como en
+las opciones.
+
+Piezas que ya existen y se pueden reutilizar directamente:
+
+- `renderLatex(latex)` ya convierte un LaTeX a HTML dibujado (la usa el editor y las
+  plantillas del modal ∑). Es la misma función que hay que llamar aquí.
+- El bloque `<span class="fx" contenteditable="false" data-latex="…">` es el formato
+  ya soportado en toda la cadena (XML, Word, migración). No hay que inventar nada nuevo,
+  solo generarlo desde texto importado en vez de desde el modal.
+
+Lo que falta construir:
+
+1. En `buildAIPrompt()`: cuando el tema/asignatura sea matemáticas (o un toggle
+   explícito «Esta evaluación es de matemáticas»), añadir una instrucción pidiendo que
+   toda fórmula vaya envuelta en `\( … \)`.
+2. Una función tipo `detectAndRenderLatex(text)` que recorra el texto plano buscando
+   `\( … \)` (y quizá `\[ … \]`), escape con `esc()` los tramos que NO son fórmula, y
+   para los que sí lo son arme el `span.fx` con `renderLatex()` — igual a como
+   `serializeMath()` hace el camino inverso.
+3. Enganchar esa función en `importAiken()`: al construir `stmtHtml` y al limpiar
+   `cleanOpts`, en vez de `esc()` puro. Si se detecta al menos una fórmula en las
+   opciones de una pregunta, hay que marcar `optsHtml:true` en el objeto guardado (ver
+   la sección "Fórmulas en las opciones de respuesta" más arriba) para que no se
+   vuelva a escapar en la próxima migración.
+
+Riesgo a vigilar: distintas IA no siempre respetan el delimitador pedido (a veces usan
+`$…$`, o Markdown con negritas alrededor). El prompt debe ser insistente y explícito, y
+`detectAndRenderLatex` debe degradar con gracia (dejar el texto tal cual, escapado) si
+no encuentra el patrón exacto — nunca debe romper una importación por una fórmula mal
+delimitada.
 
 ### Migración de datos guardados
 

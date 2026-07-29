@@ -277,6 +277,10 @@
   .btn-block{width:100%;}
   .btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;}
   .btn-sm{padding:9px 13px;font-size:13.5px;border-radius:9px;}
+  /* Confirmación de "copiado" en el propio botón: el toast global no sirve dentro de
+     un <dialog> abierto (el navegador lo pinta por encima y lo tapa). */
+  #aiCopyBtn.copied{background:var(--correct);box-shadow:0 2px 8px rgba(47,143,91,.35);}
+  #aiCopyBtn.copy-fail{background:var(--danger);box-shadow:0 2px 8px rgba(207,64,64,.35);}
 
   /* Preview */
   .prev-box{background:var(--surface-2);border-radius:11px;padding:16px;margin-top:18px;border:1px solid var(--line);}
