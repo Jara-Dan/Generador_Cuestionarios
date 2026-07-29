@@ -20,6 +20,15 @@
 <meta property="og:description" content="Crea preguntas de opción múltiple, V/F, respuesta corta, numéricas, emparejamiento, completar espacios en blanco y ensayo, y expórtalas a tu Moodle en un clic.">
 <!-- Ícono de la pestaña (extraído a un archivo en /assets para mantenerlo editable) -->
 <link rel="icon" href="assets/favicon.svg">
+<!-- MathLive: editor visual de fórmulas con "cuadros vacíos" (Fase 2).
+     Se carga desde CDN y con versión fija: al subirla hay que reprobar el editor.
+     · mathlive-fonts.css  → tipografías KaTeX (las usa también la vista previa)
+     · mathlive-static.css → estilos del HTML que genera convertLatexToMarkup()
+     Si el CDN no responde, el botón ∑ lo detecta y sigue insertando \( \) a mano. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mathlive@0.110.0/mathlive-fonts.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mathlive@0.110.0/mathlive-static.css">
+<script defer src="https://cdn.jsdelivr.net/npm/mathlive@0.110.0/mathlive.min.js"></script>
+
 <!-- Tipografía Hanken Grotesk desde Google Fonts (degrada a fuente del sistema sin internet) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -81,9 +90,9 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h7"/></svg>
           Respuesta corta
         </button>
-        <button type="button" data-type="numerical" aria-pressed="false">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 4v16M14 4v16M4 9h16M4 15h16"/></svg>
-          Respuesta numérica
+        <button type="button" data-group="math" aria-pressed="false" aria-expanded="false" aria-controls="mathTypes">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 5h9l-5 7 5 7H5"/><path d="M15 9h5M17.5 6.5v5"/></svg>
+          Matemáticas
         </button>
         <button type="button" data-type="matching" aria-pressed="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="6" cy="7" r="2"/><circle cx="18" cy="17" r="2"/><path d="M8 7h6a0 0 0 010 0M8 7c4 0 4 10 8 10"/></svg>
@@ -96,6 +105,23 @@
         <button type="button" data-type="essay" aria-pressed="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5h16M4 10h16M4 15h12M4 20h8"/></svg>
           Ensayo
+        </button>
+      </div>
+      <!-- Subtipos del grupo "Matemáticas". Se muestra solo cuando ese grupo está activo.
+           Para agregar un subtipo basta con añadir aquí un <button data-type="…"> y
+           registrarlo en MATH_TYPES dentro de main.js. -->
+      <div class="subtypes" id="mathTypes" role="group" aria-label="Tipo de pregunta matemática" style="display:none;">
+        <button type="button" data-type="numerical" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 4v16M14 4v16M4 9h16M4 15h16"/></svg>
+          Respuesta numérica
+        </button>
+        <button type="button" data-type="calculated" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 12h2M12 12h2M16 12h0M8 16h2M12 16h4"/></svg>
+          Con números que cambian
+        </button>
+        <button type="button" data-type="calculatedmulti" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="7.5" cy="9" r="1.5"/><path d="M11 9h6"/><circle cx="7.5" cy="15" r="1.5"/><path d="M11 15h6"/></svg>
+          Opción múltiple calculada
         </button>
       </div>
     </div>
@@ -120,9 +146,16 @@
         <button type="button" data-cmd="bold" title="Negrita" aria-label="Negrita"><b>B</b></button>
         <button type="button" data-cmd="italic" title="Cursiva" aria-label="Cursiva"><i>I</i></button>
         <button type="button" data-cmd="insertUnorderedList" title="Lista" aria-label="Lista con viñetas">≡</button>
-        <button type="button" data-cmd="math" title="Insertar fórmula \( \)" aria-label="Insertar fórmula matemática">∑</button>
+        <button type="button" data-cmd="math" class="rt-fx" title="Abrir el editor de fórmulas" aria-label="Insertar fórmula matemática">∑ Fórmula</button>
+        <button type="button" class="help-q" data-help="fxHelpStmt" aria-expanded="false" aria-controls="fxHelpStmt" aria-label="¿Para qué sirve el botón Fórmula?">?</button>
       </div>
       <div class="rt" id="stmt" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="stmtLabel" aria-describedby="errStmt" data-ph="Escribe aquí el enunciado…"></div>
+      <div class="help tip help-note" id="fxHelpStmt" style="display:none;">
+        <b>El botón ∑ Fórmula</b> abre un editor visual de matemáticas. Eliges una
+        plantilla (fracción, raíz, potencia…), escribes dentro de los cuadros punteados
+        y la fórmula queda dibujada dentro del texto. <b>No hace falta saber programar
+        ni escribir códigos.</b>
+      </div>
       <div class="err-msg" id="errStmt">El enunciado no puede estar vacío.</div>
       <div class="help tip" id="clozeHint" style="display:none;">
         <b>Huecos:</b> escribe la respuesta entre dobles corchetes, p. ej. <b>La capital de Francia es [[París]].</b>
@@ -132,7 +165,14 @@
 
     <!-- MULTICHOICE -->
     <div class="field" id="mcBlock">
-      <label id="lbl-opts">Opciones de respuesta <span class="hint">— marca la(s) correcta(s)</span></label>
+      <label id="lbl-opts">Opciones de respuesta <span class="hint">— marca la(s) correcta(s)</span>
+        <button type="button" class="help-q" data-help="fxHelpOpts" aria-expanded="false" aria-controls="fxHelpOpts" aria-label="¿Cómo pongo una fórmula en una opción?">?</button>
+      </label>
+      <div class="help tip help-note" id="fxHelpOpts" style="display:none;">
+        Cada opción tiene su propio botón <b>∑</b> a la derecha: sirve para poner una
+        fórmula dibujada (una fracción, una raíz…) dentro de esa respuesta, igual que en
+        el enunciado.
+      </div>
       <label class="chk" style="margin:0 0 12px;font-weight:600;">
         <input type="checkbox" id="mcMulti"> Permitir varias respuestas correctas
       </label>
@@ -163,23 +203,134 @@
 
     <!-- NUMERICAL -->
     <div class="field" id="numBlock" style="display:none;">
-      <label for="numAns">Respuesta numérica</label>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <div style="flex:1;min-width:130px;">
-          <input type="text" id="numAns" placeholder="Ej. 42 o 3.14" inputmode="decimal">
-        </div>
-        <div style="flex:0 0 auto;">
-          <label for="numTol" style="font-weight:400;font-size:12px;margin-bottom:4px;">Tolerancia ±</label>
-          <input type="text" id="numTol" value="0" style="max-width:120px;" inputmode="decimal">
+      <label id="lbl-num">Respuestas aceptadas <span class="hint">— cada una con su tolerancia (±) y su porcentaje de crédito. Necesitas al menos una al 100 %.</span></label>
+      <div class="num-head" aria-hidden="true"><span>Valor</span><span class="tol-col">Tolerancia ±</span><span class="frac-col">Crédito</span></div>
+      <div id="numList" aria-labelledby="lbl-num"></div>
+      <button type="button" class="add-opt" id="addNum">+ Agregar respuesta aceptada</button>
+
+      <label class="chk" style="margin-top:12px;font-weight:600;">
+        <input type="checkbox" id="numUnitsOn"> Pedir también la unidad (m, kg, m/s…)
+      </label>
+      <div id="numUnitsWrap" style="display:none;margin-top:8px;">
+        <label id="lbl-units">Unidades aceptadas <span class="hint">— la primera es la unidad en la que escribiste la respuesta; su multiplicador es siempre 1.</span></label>
+        <div id="numUnitsList" aria-labelledby="lbl-units"></div>
+        <button type="button" class="add-opt" id="addUnit">+ Agregar unidad equivalente</button>
+        <div class="help tip">
+          <b>Multiplicador:</b> cuántas veces cabe la unidad principal en esta. Si respondes <b>5</b> en
+          <b>m/s</b> y quieres aceptar también <b>km/h</b>, el multiplicador de km/h es <b>3.6</b>
+          (porque 5 m/s = 18 km/h). Moodle descuenta un 10 % si la unidad está mal.
         </div>
       </div>
-      <div class="err-msg" id="errNum">Escribe una respuesta numérica válida.</div>
-      <div class="help tip">Usa punto como separador decimal. La tolerancia acepta respuestas dentro de ese margen.</div>
+
+      <div class="err-msg" id="errNum">Necesitas al menos una respuesta numérica válida con crédito 100 %.</div>
+      <div class="help tip">
+        Usa <b>punto</b> como separador decimal. La tolerancia acepta respuestas dentro de ese margen
+        (0 = exacta). Puedes escribir <b>*</b> como último valor para dar retroalimentación a
+        «cualquier otra respuesta»; déjalo en 0 % de crédito.
+      </div>
+      <div class="help tip">
+        <b>Aquí no hay botón ∑, y es a propósito:</b> Moodle compara este campo como un
+        número para calificar, así que solo admite cifras. Si quieres que el estudiante
+        vea una fórmula, ponla en el <b>enunciado</b>, que sí tiene el botón.
+      </div>
+    </div>
+
+    <!-- CALCULATED / CALCULATED MULTI (comparten bloque) -->
+    <div class="field" id="calcBlock" style="display:none;">
+
+      <div class="help tip" style="margin-top:0;">
+        <b>¿Qué es esto?</b> Escribes la pregunta una sola vez usando variables como
+        <b>{a}</b> y <b>{b}</b>, y Moodle le da a cada estudiante números distintos.
+        Escribe las variables entre llaves dentro del enunciado, por ejemplo:
+        <i>«Calcula el área de un rectángulo de base {a} cm y altura {b} cm»</i>.
+      </div>
+
+      <label id="lbl-calcVars">Variables <span class="hint">— define el rango de cada una; los valores se sortean solos</span></label>
+      <div class="calc-head" aria-hidden="true"><span class="vn">Nombre</span><span>Desde</span><span>Hasta</span><span>Decimales</span></div>
+      <div id="calcVarList" aria-labelledby="lbl-calcVars"></div>
+      <button type="button" class="add-opt" id="addCalcVar">+ Agregar variable</button>
+      <div class="err-msg" id="errCalcVars">Cada variable necesita un nombre y un rango válido (desde &lt; hasta).</div>
+
+      <!-- Solo "calculated": una fórmula de respuesta -->
+      <div id="calcAnsWrap" style="margin-top:16px;">
+        <label for="calcAns">Fórmula de la respuesta correcta</label>
+        <input type="text" id="calcAns" spellcheck="false" placeholder="Ej. {a}*{b}   ·   0.5*{m}*{v}*{v}   ·   sqrt({a})">
+        <div class="err-msg" id="errCalcAns">Escribe la fórmula y usa solo variables que hayas definido arriba.</div>
+        <div class="help tip">
+          Operadores: <b>+ − * /</b> y paréntesis. Funciones: <b>sqrt, abs, round, pow,
+          sin, cos, tan, log, exp, min, max, pi()</b>.
+        </div>
+        <div class="help tip">
+          <b>Aquí no hay botón ∑, y es a propósito:</b> esta fórmula la calcula Moodle
+          en su propio lenguaje, no es una fórmula «para mirar». La versión bonita y
+          dibujada va en el <b>enunciado</b>, que sí tiene el botón.
+        </div>
+      </div>
+
+      <!-- Solo "calculatedmulti": opciones que son fórmulas -->
+      <div id="calcOptsWrap" style="display:none;margin-top:16px;">
+        <label id="lbl-calcOpts">Opciones de respuesta <span class="hint">— cada una es una fórmula; marca la correcta</span></label>
+        <div id="calcOptList" aria-labelledby="lbl-calcOpts"></div>
+        <button type="button" class="add-opt" id="addCalcOpt">+ Agregar opción</button>
+        <div class="err-msg" id="errCalcOpts">Necesitas al menos 2 opciones con fórmula y marcar exactamente una correcta.</div>
+        <div class="help tip">
+          Escribe solo la fórmula (<b>{a}+{b}</b>) y Moodle mostrará el número calculado.
+          Si quieres acompañarla de texto, envuélvela en llaves con igual:
+          <b>El resultado es {={a}+{b}} unidades</b>.
+        </div>
+        <div class="help tip">
+          <b>Aquí no hay botón ∑, y es a propósito:</b> lo que se ve en cada opción es un
+          <b>número que Moodle calcula</b> en el momento, distinto para cada estudiante.
+          No es una fórmula dibujada. Si necesitas fracciones o raíces dibujadas en las
+          respuestas, usa <b>Opción múltiple</b> normal en vez de esta.
+        </div>
+      </div>
+
+      <div class="calc-grid">
+        <div>
+          <label for="calcDec">Decimales a mostrar</label>
+          <select id="calcDec">
+            <option value="0">Enteros — 5</option>
+            <option value="1">1 decimal — 5.0</option>
+            <option value="2">2 decimales — 5.00</option>
+            <option value="3">3 decimales — 5.000</option>
+          </select>
+        </div>
+        <div>
+          <label for="calcTol">Margen de error aceptado</label>
+          <select id="calcTol">
+            <option value="0">Exacto</option>
+            <option value="0.001">± 0.1 %</option>
+            <option value="0.01">± 1 %</option>
+            <option value="0.05">± 5 %</option>
+            <option value="0.1">± 10 %</option>
+          </select>
+        </div>
+        <div>
+          <label for="calcVariants">Versiones distintas</label>
+          <select id="calcVariants">
+            <option value="5">5 versiones</option>
+            <option value="10">10 versiones</option>
+            <option value="20">20 versiones</option>
+            <option value="50">50 versiones</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="calc-sample" id="calcSample" aria-live="polite"></div>
+      <button type="button" class="add-opt" id="calcReroll">↻ Ver otra versión de ejemplo</button>
     </div>
 
     <!-- MATCHING -->
     <div class="field" id="matchBlock" style="display:none;">
-      <label id="lbl-match">Parejas <span class="hint">— cada elemento de la izquierda se empareja con su respuesta. Mínimo 3. Puedes agregar una imagen al elemento (icono 🖼️); la respuesta de la derecha siempre debe ser texto, es una limitación del formato de Moodle.</span></label>
+      <label id="lbl-match">Parejas <span class="hint">— cada elemento de la izquierda se empareja con su respuesta. Mínimo 3. Puedes agregar una imagen al elemento (icono 🖼️); la respuesta de la derecha siempre debe ser texto, es una limitación del formato de Moodle.</span>
+        <button type="button" class="help-q" data-help="fxHelpMatch" aria-expanded="false" aria-controls="fxHelpMatch" aria-label="¿Puedo poner fórmulas en el emparejamiento?">?</button>
+      </label>
+      <div class="help tip help-note" id="fxHelpMatch" style="display:none;">
+        El elemento de la <b>izquierda</b> tiene botón <b>∑</b>: admite fórmulas e imágenes.
+        La respuesta de la <b>derecha</b> no, y no es un olvido nuestro: Moodle la muestra
+        en una lista desplegable, y ahí solo cabe texto sencillo.
+      </div>
       <div id="matchList" aria-labelledby="lbl-match"></div>
       <button type="button" class="add-opt" id="addPair">+ Agregar pareja</button>
       <div class="err-msg" id="errMatch">Necesitas al menos 3 parejas completas (elemento y respuesta).</div>
@@ -311,6 +462,55 @@
       </div>
       <button type="button" class="btn btn-primary btn-sm" id="savePassage">Guardar lectura</button>
       <div style="margin-top:18px;" id="passageList"></div>
+    </div>
+  </form>
+</dialog>
+
+<!-- Formula editor dialog (Fase 2) -->
+<dialog id="fxDlg" aria-labelledby="fxDlgTitle" style="border:none;border-radius:14px;padding:0;max-width:680px;width:94vw;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+  <form method="dialog" style="margin:0;">
+    <div style="padding:20px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;">
+      <h3 id="fxDlgTitle" style="font-size:17px;">∑ Insertar fórmula</h3>
+      <button class="btn btn-ghost btn-sm" value="close" type="submit">Cerrar</button>
+    </div>
+    <div style="padding:20px 22px;">
+
+      <div class="help tip" style="margin-top:0;">
+        Elige una plantilla y escribe dentro de los <b>cuadros punteados</b>.
+        Para pasar de un cuadro al siguiente usa la tecla <b>Tab</b>, las flechas
+        del teclado, o tócalo directamente.
+      </div>
+
+      <div class="field">
+        <label id="lbl-fxTpl">Plantillas</label>
+        <div class="fx-tpl" id="fxTemplates" role="group" aria-labelledby="lbl-fxTpl"></div>
+      </div>
+
+      <div class="field">
+        <label for="fxField">Tu fórmula</label>
+        <math-field id="fxField" aria-label="Editor de fórmula"></math-field>
+        <div class="err-msg" id="errFx">Escribe una fórmula antes de insertarla.</div>
+      </div>
+
+      <details class="fx-adv" id="fxAdv">
+        <summary>Ver / editar el código LaTeX</summary>
+        <label for="fxLatex" class="sr-only">Código LaTeX de la fórmula</label>
+        <input type="text" id="fxLatex" spellcheck="false" placeholder="\frac{a}{b}">
+        <div class="help tip" style="margin-top:6px;">
+          Solo si ya conoces LaTeX. Lo que escribas aquí se refleja arriba.
+        </div>
+      </details>
+
+      <div class="fx-actions">
+        <button type="button" class="btn btn-primary btn-lg" id="fxInsert">Insertar en mi pregunta</button>
+        <button type="button" class="btn btn-ghost" id="fxClear">Borrar y empezar de nuevo</button>
+      </div>
+
+      <div class="help tip" id="fxOffline" style="display:none;color:var(--danger);">
+        No se pudo cargar el editor de fórmulas (¿sin conexión?). Puedes seguir
+        escribiendo el código LaTeX a mano entre <b>\(</b> y <b>\)</b>.
+      </div>
+
     </div>
   </form>
 </dialog>

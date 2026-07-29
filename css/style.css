@@ -84,11 +84,30 @@
   .types button{padding:11px 8px;border-radius:9px;font-weight:600;font-size:13.5px;color:var(--muted);transition:all .15s;display:flex;align-items:center;justify-content:center;gap:7px;text-align:center;}
   .types button[aria-pressed=true]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08);}
   .types button svg{width:16px;height:16px;flex:0 0 auto;}
+  /* Segunda fila: subtipos del grupo activo (hoy solo "Matemáticas") */
+  .subtypes{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:8px;padding:6px 6px 6px 18px;border-left:3px solid var(--accent);background:var(--surface-2);border-radius:0 12px 12px 0;}
+  .subtypes button{padding:10px 8px;border-radius:9px;font-weight:600;font-size:13px;color:var(--muted);transition:all .15s;display:flex;align-items:center;justify-content:center;gap:7px;text-align:center;}
+  .subtypes button[aria-pressed=true]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08);}
+  .subtypes button svg{width:15px;height:15px;flex:0 0 auto;}
 
   /* Rich text */
   .rt-tools{display:flex;gap:4px;border:1px solid var(--line);border-bottom:none;border-radius:10px 10px 0 0;padding:6px;background:var(--surface-2);}
   .rt-tools button{width:32px;height:32px;border-radius:7px;color:var(--muted);font-size:15px;display:flex;align-items:center;justify-content:center;}
   .rt-tools button:hover{background:var(--surface);color:var(--ink);}
+  /* El botón de fórmula lleva texto, no solo el símbolo: un docente que no conoce
+     el signo ∑ no tiene por qué adivinar para qué sirve. */
+  .rt-tools button.rt-fx{width:auto;padding:0 11px;gap:6px;font-weight:700;font-size:13px;
+    color:var(--accent-dark);background:var(--accent-soft);}
+  .rt-tools button.rt-fx:hover{background:var(--accent);color:#fff;}
+  .rt-tools .help-q{margin-left:auto;}
+
+  /* Botón "?" de ayuda desplegable, en el naranja de la marca */
+  .help-q{width:20px;height:20px;flex:0 0 auto;border-radius:50%;font-size:12px;font-weight:800;
+    line-height:1;color:#fff;background:var(--accent);display:inline-flex;align-items:center;
+    justify-content:center;vertical-align:middle;margin-left:6px;transition:background .15s;}
+  .help-q:hover{background:var(--accent-dark);}
+  .help-q[aria-expanded=true]{background:var(--accent-dark);}
+  .help-note{border-left:3px solid var(--accent);background:var(--accent-soft);}
   .rt{min-height:110px;border:1px solid var(--line);border-radius:0 0 10px 10px;padding:12px 13px;background:var(--surface);overflow-y:auto;max-height:300px;font-size:15px;}
   .rt p{margin:0 0 8px;} .rt:empty:before{content:attr(data-ph);color:#b3b0a8;}
 
@@ -99,11 +118,107 @@
   .opt-row .mark.correct{border-color:var(--correct);background:var(--correct);color:#fff;}
   .opt-row .mark.sq{border-radius:8px;}
   .opt-row .mark svg{width:15px;height:15px;}
+  /* La opción de respuesta es un contenteditable (admite fórmulas), pero debe
+     PARECER un campo de una línea para no romper la lectura del formulario. */
+  .opt-row .rt-opt{flex:1;min-width:0;min-height:42px;max-height:none;border-radius:10px;
+    padding:9px 12px;font-size:15px;display:flex;align-items:center;flex-wrap:wrap;gap:2px;}
+  .opt-row .rt-opt:empty:before{content:attr(data-ph);color:#b3b0a8;}
+  .opt-row .rt-opt:focus{outline:none;border-color:var(--accent);}
+  .opt-row .opt-fx{flex:0 0 auto;width:32px;height:32px;border-radius:8px;font-size:16px;
+    color:var(--accent-dark);background:var(--surface-2);border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;}
+  .opt-row .opt-fx:hover{background:var(--surface);border-color:var(--accent);}
   .opt-row .del{flex:0 0 auto;width:30px;height:30px;border-radius:8px;color:#b6b2aa;font-size:18px;}
   .opt-row .del:hover{color:var(--danger);background:var(--danger-soft);}
   .add-opt{margin-top:4px;color:var(--accent-dark);font-weight:600;font-size:14px;padding:8px 4px;display:inline-flex;align-items:center;gap:6px;}
   .add-opt:hover{text-decoration:underline;}
   .frac-sel{flex:0 0 auto;}
+
+  /* Numérica: filas valor / tolerancia / crédito */
+  .num-head{display:flex;gap:10px;margin-bottom:5px;font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
+  .num-head span:first-child{flex:1;min-width:0;}
+  .num-head .tol-col{flex:0 0 96px;}
+  .num-head .frac-col{flex:0 0 108px;}
+  .opt-row .tol-inp{flex:0 0 96px;min-width:0;}
+  .opt-row .unit-mult{flex:0 0 118px;min-width:0;}
+  .opt-row .unit-mult[readonly]{background:var(--surface-2);color:var(--muted);cursor:not-allowed;}
+  @media (max-width:560px){
+    .num-head{display:none;}
+    .opt-row .tol-inp,.opt-row .unit-mult{flex:0 0 84px;}
+  }
+
+  /* ---------- Preguntas calculadas ---------- */
+  .calc-head{display:flex;gap:10px;margin-bottom:5px;font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
+  .calc-head .vn{flex:0 0 104px;} .calc-head span:not(.vn){flex:1;min-width:0;}
+  .calc-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;}
+  .calc-row .var-name{flex:0 0 104px;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+  .calc-row input:not(.var-name){flex:1;min-width:0;}
+  .calc-row .del{flex:0 0 30px;width:30px;height:30px;border-radius:8px;color:#b6b2aa;font-size:18px;}
+  .calc-row .del:hover{color:var(--danger);background:var(--danger-soft);}
+  /* min-width:0 es imprescindible: por defecto las celdas de un grid valen
+     min-width:auto y NO se encogen, así que el <select> desborda su columna y el texto
+     se monta sobre la flechita. */
+  .calc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:16px;}
+  .calc-grid>div{min-width:0;}
+  .calc-grid label{font-size:13px;}
+  .calc-grid select{width:100%;max-width:100%;}
+  /* Ejemplo de una variante real, para que el docente vea lo que verá el estudiante */
+  .calc-sample{margin-top:16px;padding:14px 16px;border:1px dashed var(--line);border-radius:11px;background:var(--surface-2);font-size:14px;line-height:1.55;}
+  .calc-sample .lbl{display:block;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);margin-bottom:7px;}
+  .calc-sample .val{font-weight:700;color:var(--ink);}
+  .calc-sample .res{margin-top:9px;padding-top:9px;border-top:1px solid var(--line);}
+  .calc-sample .bad{color:var(--danger);font-weight:600;}
+  @media (max-width:560px){
+    .calc-head{display:none;}
+    .calc-row{flex-wrap:wrap;}
+    .calc-row .var-name{flex:1 0 100%;}
+  }
+
+  /* ---------- Editor de fórmulas (MathLive) ---------- */
+  /* Botones de plantilla: grandes y con la fórmula dibujada, no con su nombre en
+     código. El docente reconoce la forma antes que la palabra. */
+  .fx-tpl{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;}
+  .fx-tpl button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+    min-height:74px;padding:10px 6px;border:1px solid var(--line);border-radius:11px;background:var(--surface);
+    cursor:pointer;transition:all .15s;}
+  .fx-tpl button:hover,.fx-tpl button:focus-visible{border-color:var(--accent);background:var(--surface-2);}
+  .fx-tpl button .glyph{font-size:19px;line-height:1;color:var(--ink);pointer-events:none;}
+  .fx-tpl button .cap{font-size:11px;font-weight:600;color:var(--muted);text-align:center;line-height:1.2;}
+
+  /* El campo de edición: grande, porque es el corazón del modal */
+  #fxField{display:block;width:100%;min-height:76px;padding:14px 16px;font-size:26px;
+    border:1px solid var(--line);border-radius:10px;background:var(--surface);}
+  #fxField:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft,rgba(0,0,0,.05));}
+  /* Los "cuadros vacíos": MathLive los marca con .ML__placeholder */
+  #fxField::part(container){overflow-x:auto;}
+  .ML__placeholder{border:1.5px dashed var(--accent)!important;border-radius:4px;
+    min-width:.85em;padding:0 .12em;opacity:1!important;}
+
+  .fx-adv{margin:4px 0 14px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface-2);}
+  .fx-adv summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);}
+  .fx-adv[open] summary{margin-bottom:9px;}
+  .fx-adv input{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;}
+
+  .fx-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .btn-lg{padding:13px 22px;font-size:15px;}
+
+  /* Fórmula ya insertada: bloque atómico (contenteditable=false) dentro del enunciado.
+     En el editor lleva un fondo tenue para que se vea que es una pieza; en la vista
+     previa va limpia, como la verá el estudiante. */
+  /* Las fórmulas van un punto más grandes que el texto: en pantalla los exponentes y
+     los denominadores de una fracción quedan diminutos si heredan el tamaño normal. */
+  span.fx{display:inline-block;vertical-align:middle;font-size:1.35em;line-height:1.15;}
+  .rt span.fx{background:rgba(0,0,0,.045);border-radius:5px;padding:2px 6px;margin:1px 1px;cursor:default;}
+  .rt span.fx::selection,.rt span.fx *::selection{background:var(--accent);color:#fff;}
+  .prev-stmt span.fx,.prev-opt span.fx{padding:0 2px;}
+  /* Dentro de una opción de respuesta el espacio es más justo */
+  .prev-opt span.fx{font-size:1.25em;}
+
+  @media (max-width:560px){
+    .fx-tpl{grid-template-columns:repeat(auto-fill,minmax(78px,1fr));}
+    #fxField{font-size:22px;min-height:66px;}
+    .fx-actions .btn-lg{flex:1;justify-content:center;}
+  }
 
   /* paired rows (matching) */
   .pair-row{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);}
@@ -189,6 +304,9 @@
   .prev-select{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;padding:8px 10px;border:1px solid var(--correct);border-radius:8px;background:var(--correct-soft);color:var(--correct);font-weight:600;overflow-wrap:anywhere;}
   .prev-select .chev{font-size:10px;opacity:.7;flex:0 0 auto;}
   .prev-input{display:flex;align-items:center;gap:9px;min-height:38px;padding:8px 11px;border:1px solid var(--correct);border-radius:8px;background:var(--correct-soft);color:var(--correct);font-weight:600;font-size:14px;}
+  /* Respuesta numérica con crédito parcial: se distingue de la que vale 100 % */
+  .prev-input+.prev-input{margin-top:6px;}
+  .prev-input.partial{border-color:var(--line);background:var(--surface-2);color:var(--muted);}
   .prev-essay-box{border:1px solid #c9c4ba;border-radius:8px;background:var(--surface);min-height:78px;padding:10px 12px;color:#b3b0a8;font-size:13.5px;font-style:italic;}
   @media (max-width:520px){
     .prev-match{grid-template-columns:minmax(0,max-content) minmax(92px,132px);gap:9px;}

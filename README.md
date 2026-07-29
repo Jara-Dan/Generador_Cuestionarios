@@ -1,8 +1,7 @@
 # Generador de Cuestionarios · Trendi
 
 Herramienta web para que docentes creen preguntas de evaluación y las exporten
-como un archivo **XML compatible con Moodle**, sin instalar nada y sin conexión
-permanente a internet.
+como un archivo **XML compatible con Moodle**, sin instalar nada.
 
 \---
 

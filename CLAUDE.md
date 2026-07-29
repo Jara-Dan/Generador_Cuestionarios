@@ -61,27 +61,231 @@ Es fácil olvidar uno y que el bug aparezca después:
 - La vista previa muestra la **respuesta correcta resaltada** (es para el docente),
   mientras que el estudiante en Moodle vería el control vacío. Es intencional.
 
-## Estado de matemáticas (pendiente de trabajo grande)
+## Matemáticas (rediseño en curso, por fases)
 
-Hoy el soporte matemático es **una sola línea** en `js/main.js` (`rtCmd`, caso `'math'`):
-el botón ∑ inserta el texto literal `\(  \)` en el enunciado. Nada más.
+### El grupo "Matemáticas"
 
-Implicaciones a tener en cuenta antes de rediseñarlo:
+El botón **Matemáticas** de `#types` no es un tipo de pregunta: es un **agrupador** que
+despliega una segunda fila (`#mathTypes`) con sus subtipos. La lógica vive en el arreglo
+`MATH_TYPES` de `js/main.js`. Para agregar un subtipo hacen falta dos cosas:
 
-- `\( … \)` es la sintaxis del filtro **MathJax/TeX de Moodle**. Solo se renderiza si
-  ese filtro está activado en el Moodle destino — conviene no asumir que lo está.
-- **La vista previa NO renderiza LaTeX**: el docente ve `\( x^2 \)` en crudo.
-- **La exportación a Word tampoco lo renderiza**: saldría el LaTeX literal en el `.doc`.
-- Renderizar fórmulas requeriría KaTeX/MathJax, y hoy el proyecto **no tiene ninguna
-  dependencia JS**. Si se agrega, habría que empaquetarla localmente para no romper el
-  funcionamiento sin conexión.
-- Moodle tiene además tipos de pregunta numéricos/calculados que hoy no se aprovechan.
+1. Un `<button data-type="…">` dentro de `#mathTypes` en `index.html`.
+2. El mismo identificador dentro de `MATH_TYPES`.
+
+A partir de ahí sigue aplicando el checklist de 6 puntos de arriba.
+
+`lastMathType` recuerda el último subtipo usado, para que al volver a pulsar el
+agrupador no se pierda la selección.
+
+### Estado por fases
+
+| Fase | Alcance | Estado |
+|---|---|---|
+| 1 | Grupo "Matemáticas" + `numerical` completo (varias respuestas con crédito parcial, tolerancia por respuesta, unidades, comodín `*`) | **Hecho** |
+| 2 | Editor de fórmulas con cuadros vacíos (MathLive) + vista previa que renderice | **Hecho** |
+| 3 | Lienzo de dibujo y cámara → imagen (sin OCR) | Pendiente |
+| 4 | `calculated` / `calculatedmulti` con datasets | **Hecho y confirmado en Moodle** |
+| 5 | Fórmulas en el export a Word y huecos `NUMERICAL` en cloze | Pendiente |
+| 6 | **Formato de examen impreso** en el Word (escudo + encabezado editable) | Pendiente |
+| 7 | Botón **«Novedades»** con los cambios de cada versión | Pendiente |
+| 8 | **Buzón de sugerencias** para que los docentes escriban a Daniel | Pendiente |
+
+Las fases 6, 7 y 8 las pidió Daniel el 2026-07-29; el detalle está más abajo.
+
+### Cómo se guarda una fórmula (Fase 2)
+
+Dentro del enunciado (un `contenteditable`) la fórmula **no** es texto LaTeX crudo, sino
+un bloque atómico:
+
+```html
+<span class="fx" contenteditable="false" data-latex="\frac{a}{b}">…dibujo de MathLive…</span>
+```
+
+- El docente ve la fórmula **dibujada** mientras escribe y no puede romperla por dentro.
+- El LaTeX original viaja en `data-latex`.
+- **`serializeMath()` es obligatorio** antes de mandar el enunciado a cualquier salida:
+  convierte cada bloque a `\( … \)`. Ya está enganchado en `buildStatement()` (XML),
+  el export a Word y `renderTray()`. **Si se añade una salida nueva, hay que llamarlo
+  ahí también**, o el markup de MathLive se colará en el archivo.
+
+Detalles de MathLive que costaron descubrir:
+
+- `<math-field>` emite `input` al teclear, pero **no** cuando se le inserta contenido
+  por código (`executeCommand`/`insert`). Por eso la caja de LaTeX se refresca también
+  al desplegar el `<details>`.
+- El evento `toggle` de `<details>` es **asíncrono**: al probarlo hay que esperar un
+  tick antes de leer el resultado.
+- `\placeholder{}` **no existe en MathJax**. Si queda alguno sin llenar, Moodle mostraría
+  un error, así que la inserción se bloquea. Para un hueco intencional está la plantilla
+  «Espacio en blanco», que usa `\underline{\hspace{…}}` (TeX base, sin depender de AMS).
+
+### Preguntas calculadas (Fase 4)
+
+Dos subtipos comparten el bloque `#calcBlock` del formulario: `calculated` (respuesta
+única) y `calculatedmulti` (opciones). Por eso `applyType()` compara **por elemento y no
+por tipo** — si comparara por tipo, el segundo volvería a ocultar el bloque que el
+primero acaba de mostrar.
+
+Decisiones que hay que respetar:
+
+- **El docente define rangos, no listas.** Dice «{a} va de 2 a 12, 0 decimales» y los
+  valores se sortean solos. Pedirle escribir 10 valores a mano sería inviable.
+- **Los valores se sortean al GUARDAR**, no al exportar, y se almacenan en
+  `q.calcVars[].values`. Así el XML siempre coincide con lo que el docente vio, y volver
+  a exportar no cambia los números de un examen ya repartido.
+- `calculated` se emite como **`calculatedsimple`**, que lleva sus datasets dentro de la
+  propia pregunta (`status=private`) sin depender de datos compartidos del curso.
+- `tolerancetype=1` (tolerancia **relativa**: 0.01 = 1 %) es el único valor comprobado
+  contra un Moodle real. No cambiarlo a nominal/geométrica sin volver a probar.
+- Las opciones de `calculatedmulti` se envuelven en `{= … }` al exportar, salvo que el
+  docente ya las escribiera así (para mezclar texto y fórmula).
+
+**El evaluador de fórmulas (`evalFormula`) es solo para la vista previa.** Quien evalúa
+de verdad es Moodle. No usa `eval()` sobre el texto del docente: sustituye variables,
+traduce las funciones de una lista blanca a `Math.*`, y **comprueba que lo que queda
+sean solo cifras, operadores y paréntesis** antes de evaluar. Si se añaden funciones,
+hay que tocar `CALC_FUNCS` **y** la expresión regular de validación.
+
+Trampa encontrada al probar: `substCalc()` **no puede** usar una expresión regular tipo
+`/\{=([^}]*)\}/`, porque la fórmula lleva llaves dentro. Con `{={a}*{b}}` cortaba en el
+primer `}` y evaluaba `{a`. Hay que contar el anidamiento a mano.
+
+### Fórmulas en las opciones de respuesta
+
+Las opciones de `multichoice` **ya no son `<input type="text">`**: son `contenteditable`
+con su propio botón ∑, igual que el enunciado. Por tanto **`opts[].text` es HTML**, no
+texto plano. Consecuencias que hay que respetar:
+
+- Al comprobar si una opción está llena hay que usar `htmlHasText()`, no `text.trim()`
+  (una fórmula sola no aporta texto propio pero sí es contenido válido).
+- En el XML va `serializeMath(o.text)` **sin `esc()`**. Poner `esc()` rompería el HTML.
+- `migrateQ()` escapa una sola vez las opciones antiguas y marca `q.optsHtml = true`.
+  Sin eso, un «5 < 10» guardado antes se interpretaría como etiqueta y desaparecería.
+
+El **elemento izquierdo del emparejamiento** también las admite (misma razón por la que
+admite imagen: Moodle lo renderiza como HTML). `pairs[].q` es HTML y se migra con la
+bandera `q.pairsHtml`, igual que `optsHtml`.
+
+**Dónde NO va el botón ∑, y por qué.** Esto no es un olvido; si alguien lo "arregla"
+añadiéndolo, romperá la pregunta:
+
+| Campo | Motivo |
+|---|---|
+| Respuesta de `numerical` | Moodle lo compara como **número** para calificar. Solo cifras. |
+| Fórmula de `calculated` | Es una fórmula **del motor de Moodle** (`{a}*{b}`), no LaTeX. |
+| Opciones de `calculatedmulti` | Muestran un **número que Moodle calcula**, distinto por estudiante. Además las llaves de LaTeX chocarían con la sintaxis `{= … }`. |
+| Respuesta derecha del emparejamiento | Va en un `<select>`; un `<option>` no admite HTML. |
+| Respuestas de «respuesta corta» | Se comparan como texto literal. |
+
+Cada uno de esos bloques lleva en la interfaz una nota que lo explica al docente, para
+que la ausencia no se lea como un fallo.
+
+El modal de fórmulas es reutilizable: `openFxDlg(target, onDone)` recibe el
+`contenteditable` destino y un callback para volcar el resultado al estado.
+
+## Fases pendientes: qué pidió Daniel exactamente
+
+Anotado el 2026-07-29 para que no se pierda entre sesiones. Nada de esto está empezado.
+
+### Fase 6 — Formato de examen impreso en el Word
+
+Hay docentes que **no suben nada a Moodle**: descargan el Word y aplican la evaluación
+en papel. Hoy el `.doc` es funcional pero sin identidad. Lo que pidió:
+
+- Un **espacio arriba para el escudo institucional** (subir imagen, igual que las
+  imágenes de pregunta: base64, límite de 1 MB).
+- Un **encabezado genérico de evaluación editable**: nombre del colegio, asignatura,
+  docente, periodo, espacio para nombre del estudiante y fecha, etc.
+- Que quede «un formatico chévere», o sea presentable para imprimir tal cual.
+
+Ojo al implementarlo: el export actual es **HTML con extensión `.doc`**, no un `.docx`
+real. Los encabezados repetidos en cada página y los márgenes de Word se controlan con
+CSS propietario de Word (`@page`, `mso-*`), que no siempre se comporta. Conviene probar
+imprimiendo de verdad, no solo abriendo el archivo. Va junto con la Fase 5, que también
+toca el Word (fórmulas como imagen).
+
+### Fase 7 — Botón «Novedades»
+
+Al lado del botón de **«Instrucciones de uso»**, un botón que abra un diálogo con los
+cambios de cada versión, en lenguaje de docente y no de programador («ahora puedes poner
+fracciones en las respuestas», no «se refactorizó `renderOpts`»). Al entregar una versión
+nueva hay que acordarse de añadir su entrada.
+
+### Fase 8 — Buzón de sugerencias
+
+Para que los docentes le escriban a Daniel. **Él prefiere evitar WhatsApp**; querría algo
+por correo. Hay que decidir con él cuando se aborde; el problema de fondo es que la app
+es 100 % estática en GitHub Pages, **sin backend**, así que no puede enviar correo por sí
+misma. Opciones reales:
+
+| Opción | A favor | En contra |
+|---|---|---|
+| Enlace `mailto:` | Cero infraestructura | Necesita cliente de correo configurado; el correo queda expuesto a rastreadores de spam |
+| **Formspree / Formspark** | Formulario dentro de la app, llega al correo, plan gratuito | Depende de un tercero; el endpoint es público (traen antispam) |
+| **Formulario de Google** | Gratis, robusto, respuestas en una hoja de cálculo | Saca al docente de la app; estética distinta |
+
+Recomendación de partida: **Formspree** si se quiere que se sienta parte de la app, o
+**Formulario de Google** si se prefiere cero mantenimiento. En cualquier caso, **no se
+puede ocultar una clave de API en un sitio estático** — hay que elegir un servicio cuyo
+endpoint sea público por diseño. Decidirlo con Daniel antes de programar nada.
+
+### Migración de datos guardados
+
+Las preguntas numéricas anteriores a la Fase 1 traen `{numAns, numTol}`. La función
+`migrateQ()` las convierte a `{numAnswers:[…], numUnitsOn, numUnits}` al cargar de
+localStorage **y** al restaurar un respaldo JSON. Si algún día cambia otra vez el
+formato de un tipo, ese es el sitio donde engancharlo.
+
+### Verificado importando en un Moodle real (2026-07)
+
+No son suposiciones: se importó un XML de sonda y se revisó la vista previa.
+
+- ✅ **MathJax está activo y renderiza `\( … \)` y `\[ … \]`**, tanto en el enunciado
+  como en **las opciones de respuesta**. El LaTeX es una vía válida.
+- ✅ **`calculatedsimple` funciona**: los `<dataset_definitions>` importan bien y los
+  comodines `{a}`, `{b}` se sustituyen por valores reales. El XML que se documenta más
+  abajo es el que se validó.
+- ✅ Cloze con huecos `{1:NUMERICAL:=5:0.01}` importa y puntúa por hueco.
+- ✅ **Numérica: el crédito parcial y las unidades CALIFICAN bien.** Responder `3.1` a
+  una respuesta de 50 % da 0.50 sobre 1.00. Y con `<units>` + multiplicador, responder
+  `18 km/h` a una pregunta cuya respuesta es `5 m/s` se acepta como correcta.
+- ✅ **Datasets con decimales** (`<decimals>1</decimals>`) funcionan.
+- ⚠️ **`calculatedmulti`: las opciones NO se evalúan solas.** Con `<text>{a}+{b}</text>`
+  el estudiante ve literalmente «15+11». **Hay que envolverlas en `{= … }`**:
+  `<text>{={a}+{b}}</text>` sí muestra el número. Comprobado. Se puede mezclar texto y
+  fórmula en la misma opción («El resultado es {={a}*{b}} unidades»). La calificación va
+  por el atributo `fraction`, no por la fórmula.
+- La sintaxis `{= … }` también evalúa dentro de `<generalfeedback>`: sirve para
+  mostrarle al estudiante la solución desarrollada con sus propios números.
+
+**Requisito de diseño que salió de estas pruebas:** `correctanswerlength` controla
+cuántos decimales se muestran. Con el valor 2, una suma de enteros sale como «5.00»,
+que queda absurdo. El formulario de la Fase 4 **debe dejar que el docente elija los
+decimales** (0 para enteros, 2 para dinero o física).
+
+Cuidado con generalizar: que MathJax esté activo en el Moodle de Daniel no significa
+que lo esté en el de otra institución. Por eso la Fase 3 (fórmula como imagen) sigue
+siendo el plan B universal.
+
+### Sobre el LaTeX y MathJax
+
+- Hasta la Fase 2, **ni la vista previa ni el export a Word renderizan LaTeX**: se ve
+  el código crudo.
+- Decisión tomada: **se acepta depender de librerías externas** (MathLive por CDN). El
+  proyecto ya no promete funcionar sin conexión.
 
 ## Probar cambios
 
-Se abre `index.html` directamente en el navegador (no hace falta servidor). **El
-navegador cachea `main.js` y `style.css` con fuerza**: si un cambio "no aparece", casi
-siempre es caché — recargar con Ctrl+F5.
+`index.html` se puede abrir directo en el navegador. Para trabajar es más cómodo
+servirlo por HTTP: `.claude/launch.json` levanta `python -m http.server 8777`.
+
+**El navegador cachea `main.js` y `style.css` con fuerza**: si un cambio "no aparece",
+casi siempre es caché. **Ctrl+R no basta** — hay que hacer **Ctrl+F5** o añadir `?v=N`
+a la URL.
+
+Al probar con herramientas automatizadas, ojo: el panel de vista previa integrado puede
+renderizar `file://` como captura estática **sin ejecutar JavaScript**, y eso parece un
+bug del código cuando no lo es. Ante cualquier duda, servir por HTTP y forzar recarga.
 
 ## Preferencias de trabajo
 
