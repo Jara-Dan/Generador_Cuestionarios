@@ -49,7 +49,7 @@
   // ---------- State ----------
   function freshOpts(){ return [{text:'',correct:true},{text:'',correct:false}]; }
   function freshSA(){ return [{text:'',frac:'100'}]; }
-  function freshPairs(){ return [{q:'',a:''},{q:'',a:''},{q:'',a:''}]; }
+  function freshPairs(){ return [{q:'',a:'',image:null},{q:'',a:'',image:null},{q:'',a:'',image:null}]; }
   // `state` = la pregunta que se está editando AHORA (un borrador en memoria).
   // Al pulsar "Agregar a la lista" se valida y se copia a `questions`. `editingId`
   // distingue entre crear una nueva (null) o estar editando una existente (su id).
@@ -227,26 +227,69 @@
   $('numTol').addEventListener('input',function(){ state.numTol=this.value; renderPreview(); });
 
   // ---------- Matching ----------
+  // Nota Moodle: la respuesta (derecha) del emparejamiento se muestra siempre
+  // en un <select> de Moodle, así que solo puede ser texto plano — jamás imagen.
+  // El elemento (izquierda) sí admite imagen porque se renderiza como HTML normal.
   function renderMatch(){
     var list=$('matchList'); list.innerHTML='';
     state.pairs.forEach(function(p,i){
       var row=document.createElement('div'); row.className='pair-row';
+
+      var thumbWrap=document.createElement('div'); thumbWrap.className='pair-thumb-wrap';
+      var thumb=document.createElement('div'); thumb.className='pair-thumb'+(p.image?' has-img':'');
+      thumb.setAttribute('role','button'); thumb.tabIndex=0;
+      thumb.title=p.image?'Cambiar imagen':'Agregar imagen al elemento (opcional)';
+      var fileInput=document.createElement('input'); fileInput.type='file'; fileInput.accept='image/png,image/jpeg'; fileInput.style.display='none';
+      fileInput.onchange=function(e){
+        var file=e.target.files[0]; if(!file) return;
+        if(file.size > 1024*1024){ toast('La imagen pesa '+(file.size/1048576).toFixed(1)+' MB. Máximo 1 MB — comprímela primero.', true); this.value=''; return; }
+        var r=new FileReader();
+        r.onload=function(){
+          var data=r.result; var b64=data.split(',')[1];
+          var ext = file.type==='image/png'?'png':'jpg';
+          p.image={ filename:'pair_'+Date.now()+'_'+Math.random().toString(36).slice(2,7)+'.'+ext, base64:b64, dataUrl:data, alt:'' };
+          renderMatch(); renderPreview();
+        };
+        r.readAsDataURL(file);
+      };
+      if(p.image){
+        var img=document.createElement('img'); img.src=p.image.dataUrl; img.alt='';
+        thumb.appendChild(img);
+      } else {
+        thumb.innerHTML='🖼️';
+      }
+      thumb.appendChild(fileInput);
+      thumb.onclick=function(){ fileInput.click(); };
+      thumb.onkeydown=function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); fileInput.click(); } };
+      thumbWrap.appendChild(thumb);
+      if(p.image){
+        var rm=document.createElement('button'); rm.type='button'; rm.className='pair-thumb-rm'; rm.textContent='Quitar';
+        rm.setAttribute('aria-label','Quitar imagen del elemento '+(i+1));
+        rm.onclick=function(){ p.image=null; renderMatch(); renderPreview(); };
+        thumbWrap.appendChild(rm);
+      }
+
+      var fields=document.createElement('div'); fields.className='pair-fields';
       var q=document.createElement('input'); q.type='text'; q.value=p.q;
-      q.placeholder='Elemento '+(i+1); q.setAttribute('aria-label','Elemento '+(i+1));
+      q.placeholder = p.image ? 'Texto opcional' : 'Elemento '+(i+1);
+      q.setAttribute('aria-label','Elemento '+(i+1));
       q.oninput=function(){ p.q=q.value; renderPreview(); };
       var arrow=document.createElement('span'); arrow.className='arrow'; arrow.textContent='→'; arrow.setAttribute('aria-hidden','true');
       var a=document.createElement('input'); a.type='text'; a.value=p.a;
       a.placeholder='Su respuesta'; a.setAttribute('aria-label','Respuesta del elemento '+(i+1));
       a.oninput=function(){ p.a=a.value; renderPreview(); };
+      fields.appendChild(q); fields.appendChild(arrow); fields.appendChild(a);
+
       var del=document.createElement('button'); del.type='button'; del.className='del'; del.innerHTML='×';
-      del.title='Eliminar'; del.setAttribute('aria-label','Eliminar la pareja '+(i+1));
+      del.title='Eliminar pareja'; del.setAttribute('aria-label','Eliminar la pareja '+(i+1));
       del.onclick=function(){ if(state.pairs.length<=3){toast('Mínimo 3 parejas',true);return;}
         state.pairs.splice(i,1); renderMatch(); renderPreview(); };
-      row.appendChild(q); row.appendChild(arrow); row.appendChild(a); row.appendChild(del);
+
+      row.appendChild(thumbWrap); row.appendChild(fields); row.appendChild(del);
       list.appendChild(row);
     });
   }
-  $('addPair').onclick=function(){ state.pairs.push({q:'',a:''}); renderMatch(); };
+  $('addPair').onclick=function(){ state.pairs.push({q:'',a:'',image:null}); renderMatch(); };
 
   // ---------- Cloze ----------
   function countGaps(html){ var m=html.match(/\[\[[^\]]+\]\]/g); return m?m.length:0; }
@@ -366,28 +409,42 @@
     html += '</div>';
 
     if(state.type==='multichoice'){
-      state.opts.forEach(function(o){
+      // Moodle numera las opciones con a. b. c. (answernumbering=abc en el XML)
+      state.opts.forEach(function(o,i){
         html += '<div class="prev-opt'+(o.correct?' ok':'')+'"><span class="circle'+(state.mcMulti?' sq':'')+'">'+(o.correct?'✓':'')+'</span>'+
+                '<span class="prev-letter">'+String.fromCharCode(97+i)+'.</span>'+
                 (o.text? esc(o.text):'<span style="color:#b3b0a8">(vacía)</span>')+(o.correct?'<span class="ok-tag">Correcta</span>':'')+'</div>';
       });
     } else if(state.type==='truefalse'){
       html += '<div class="prev-opt'+(state.tfVal?' ok':'')+'"><span class="circle">'+(state.tfVal?'✓':'')+'</span>Verdadero'+(state.tfVal?'<span class="ok-tag">Correcta</span>':'')+'</div>';
       html += '<div class="prev-opt'+(!state.tfVal?' ok':'')+'"><span class="circle">'+(!state.tfVal?'✓':'')+'</span>Falso'+(!state.tfVal?'<span class="ok-tag">Correcta</span>':'')+'</div>';
     } else if(state.type==='shortanswer'){
+      // En Moodle el alumno escribe en una caja de texto; aquí se muestra la respuesta esperada.
       var acc=state.saAnswers.filter(function(a){return a.text.trim();});
-      html += acc.length? '<div class="prev-opt ok"><span class="circle">✓</span>'+esc(acc[0].text)+(acc.length>1?' <span class="prev-note">(+'+(acc.length-1)+' aceptadas)</span>':'')+'</div>'
+      html += acc.length? '<div class="prev-input">✓ '+esc(acc[0].text)+(acc.length>1?' <span class="prev-note">(+'+(acc.length-1)+' aceptadas)</span>':'')+'</div>'
                         : '<div class="prev-note">Sin respuestas aún…</div>';
     } else if(state.type==='numerical'){
-      html += state.numAns.trim()? '<div class="prev-opt ok"><span class="circle">✓</span>'+esc(state.numAns)+(parseFloat(state.numTol)?' ± '+esc(state.numTol):'')+'</div>'
+      html += state.numAns.trim()? '<div class="prev-input">✓ '+esc(state.numAns)+(parseFloat(state.numTol)?' ± '+esc(state.numTol):'')+'</div>'
                                  : '<div class="prev-note">Sin respuesta aún…</div>';
     } else if(state.type==='matching'){
-      var pr=state.pairs.filter(function(p){return p.q.trim()&&p.a.trim();});
-      if(pr.length){ pr.forEach(function(p){ html+='<div class="prev-opt"><span class="circle ok"></span>'+esc(p.q)+' <span style="color:var(--muted);margin:0 6px;">→</span> <b>'+esc(p.a)+'</b></div>'; }); }
+      // Moodle muestra cada elemento a la izquierda y un <select> a la derecha
+      // ("Elige una opción…"). Aquí el desplegable ya trae la respuesta correcta.
+      var pr=state.pairs.filter(function(p){return (p.q.trim()||p.image)&&p.a.trim();});
+      // Si alguna pareja tiene imagen, todas reservan la columna para que los
+      // textos y los desplegables queden alineados entre filas.
+      var anyImg=pr.some(function(p){return !!p.image;});
+      if(pr.length){ pr.forEach(function(p){
+        html+='<div class="prev-match'+(anyImg?' with-img':'')+'">'+
+          (anyImg?'<div class="pic">'+(p.image?'<img src="'+p.image.dataUrl+'" alt="">':'')+'</div>':'')+
+          '<div class="stem">'+(p.q?esc(p.q):'')+'</div>'+
+          '<span class="prev-select">'+esc(p.a)+'<span class="chev">▼</span></span></div>';
+      }); }
       else html += '<div class="prev-note">Agrega parejas…</div>';
     } else if(state.type==='cloze'){
-      html += '<div class="prev-note">'+countGaps(stmt.innerHTML)+' hueco(s). Las palabras subrayadas son las respuestas.</div>';
+      html += '<div class="prev-note">'+countGaps(stmt.innerHTML)+' hueco(s). En Moodle el estudiante ve esas cajas vacías; aquí muestran la respuesta.</div>';
     } else if(state.type==='essay'){
-      html += '<div class="prev-opt"><span class="circle"></span><i>Espacio de respuesta abierta · calificación manual</i></div>';
+      // En Moodle el alumno escribe en un editor de texto; se representa como caja amplia.
+      html += '<div class="prev-essay-box">Espacio de respuesta abierta — el estudiante escribe aquí (calificación manual).</div>';
     }
     preview.innerHTML = html;
   }
@@ -420,7 +477,7 @@
     } else if(state.type==='numerical'){
       if(state.numAns.trim()==='' || isNaN(parseFloat(state.numAns))){ showErr('errNum'); ok=false; }
     } else if(state.type==='matching'){
-      var pr=state.pairs.filter(function(p){return p.q.trim()&&p.a.trim();});
+      var pr=state.pairs.filter(function(p){return (p.q.trim()||p.image)&&p.a.trim();});
       if(pr.length<3){ showErr('errMatch'); ok=false; }
     } else if(state.type==='cloze'){
       if(countGaps(stmtHtml)<1){ showErr('errStmt'); $('errStmt').textContent='Agrega al menos un hueco con [[respuesta]].'; ok=false; }
@@ -449,7 +506,7 @@
     else if(state.type==='shortanswer'){ q.saCase=state.saCase;
       q.saAnswers=state.saAnswers.filter(function(a){return a.text.trim();}).map(function(a){return {text:a.text.trim(),frac:a.frac};}); }
     else if(state.type==='numerical'){ q.numAns=state.numAns.trim(); q.numTol=(state.numTol.trim()||'0'); }
-    else if(state.type==='matching'){ q.pairs=state.pairs.filter(function(p){return p.q.trim()&&p.a.trim();}).map(function(p){return {q:p.q.trim(),a:p.a.trim()};}); }
+    else if(state.type==='matching'){ q.pairs=state.pairs.filter(function(p){return (p.q.trim()||p.image)&&p.a.trim();}).map(function(p){return {q:p.q.trim(),a:p.a.trim(),image:p.image?{filename:p.image.filename,base64:p.image.base64,alt:(p.image.alt||'').trim()}:null};}); }
 
     if(state.editingId){
       var idx=questions.findIndex(function(x){return x.id===state.editingId;});
@@ -460,6 +517,7 @@
   };
 
   $('clearBtn').onclick=resetForm;
+  $('editBannerNewBtn').onclick=resetForm;
   function resetForm(){
     var keepType=state.type;
     state={ type:keepType, editingId:null,
@@ -470,6 +528,7 @@
     $('imgInput').value=''; $('mcMulti').checked=false; $('saCase').checked=false; $('shuffle').checked=true;
     $('tagInput').value=''; $('errStmt').textContent='El enunciado no puede estar vacío.';
     $('addBtn').textContent='Agregar a la lista'; $('clearBtn').style.display='none';
+    $('editBanner').style.display='none';
     $('tf').querySelector('.v').setAttribute('aria-pressed','true'); $('tf').querySelector('.f').setAttribute('aria-pressed','false');
     refreshPassageSelect();
     renderOpts(); renderSA(); renderMatch(); renderImg(); renderTags(); applyType(); renderPreview(); clearErrs();
@@ -516,7 +575,7 @@
     state.saAnswers = q.type==='shortanswer' ? q.saAnswers.map(function(a){return {text:a.text,frac:a.frac};}) : freshSA();
     state.saCase = q.type==='shortanswer' ? !!q.saCase : false;
     state.numAns = q.type==='numerical' ? q.numAns : ''; state.numTol = q.type==='numerical' ? q.numTol : '0';
-    state.pairs = q.type==='matching' ? q.pairs.map(function(p){return {q:p.q,a:p.a};}) : freshPairs();
+    state.pairs = q.type==='matching' ? q.pairs.map(function(p){return {q:p.q,a:p.a,image:p.image?{filename:p.image.filename,base64:p.image.base64,alt:p.image.alt,dataUrl:'data:image/'+(p.image.filename.slice(-3)==='png'?'png':'jpeg')+';base64,'+p.image.base64}:null};}) : freshPairs();
     state.grade=q.grade||'1'; state.penalty=q.penalty!=null?q.penalty:'0'; state.genfb=q.genfb||''; state.shuffle=q.shuffle!==false;
 
     stmt.innerHTML=q.statement; $('qname').value=q.name; $('genfb').value=state.genfb;
@@ -525,6 +584,7 @@
     $('tf').querySelector('.v').setAttribute('aria-pressed', state.tfVal?'true':'false');
     $('tf').querySelector('.f').setAttribute('aria-pressed', state.tfVal?'false':'true');
     $('addBtn').textContent='Actualizar pregunta'; $('clearBtn').style.display='inline-flex';
+    $('editBannerName').textContent=q.name; $('editBanner').style.display='flex';
     refreshPassageSelect(); $('passageSel').value=state.passageId;
     renderOpts(); renderSA(); renderMatch(); renderImg(); renderTags(); applyType(); renderPreview(); renderTray();
     window.scrollTo({top:0,behavior:'smooth'});
@@ -689,7 +749,9 @@
            '\n    <partiallycorrectfeedback format="html"><text>Respuesta parcialmente correcta.</text></partiallycorrectfeedback>'+
            '\n    <incorrectfeedback format="html"><text>Respuesta incorrecta.</text></incorrectfeedback>';
       q.pairs.forEach(function(p){
-        x += '\n    <subquestion format="html">'+htmlText('<p>'+esc(p.q)+'</p>')+
+        var stemHtml = '<p>'+(p.q?esc(p.q):'')+(p.image?'<img src="@@PLUGINFILE@@/'+p.image.filename+'" alt="'+esc(p.image.alt||'')+'">':'')+'</p>';
+        x += '\n    <subquestion format="html">'+htmlText(stemHtml)+
+             (p.image? fileTag(p.image):'') +
              '<answer>'+plainText(p.a)+'</answer></subquestion>';
       });
       x += '\n  </question>';
@@ -800,7 +862,11 @@
         wordContent += '<p><br>Respuesta: _________________________________________</p>';
       } else if (q.type === 'matching') {
         wordContent += '<ul class="opts">';
-        q.pairs.forEach(function(p) { wordContent += '<li>' + esc(p.q) + ' &nbsp; _______________________</li>'; });
+        q.pairs.forEach(function(p) {
+          var mime = p.image ? (p.image.filename.slice(-3)==='png'?'png':'jpeg') : '';
+          var imgHtml = p.image ? '<img src="data:image/' + mime + ';base64,' + p.image.base64 + '" style="max-width:80px;max-height:60px;vertical-align:middle;margin-right:8px;" alt="' + esc(p.image.alt||'') + '">' : '';
+          wordContent += '<li>' + imgHtml + esc(p.q) + ' &nbsp; _______________________</li>';
+        });
         wordContent += '</ul>';
       } else if (q.type === 'essay') {
         wordContent += '<p><br>___________________________________________________________________<br><br>___________________________________________________________________<br><br>___________________________________________________________________</p>';

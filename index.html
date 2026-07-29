@@ -61,6 +61,11 @@
   <section class="card card-pad" aria-labelledby="h-editor">
     <h2 class="section-h" id="h-editor"><span class="num">1</span> Crear pregunta</h2>
 
+    <div id="editBanner" class="edit-banner" style="display:none;">
+      <span>✏️ Editando: <strong id="editBannerName"></strong></span>
+      <button type="button" class="btn btn-sm btn-primary" id="editBannerNewBtn">+ Nueva pregunta</button>
+    </div>
+
     <div class="field">
       <label id="lbl-type">Tipo de pregunta</label>
       <div class="types" id="types" role="group" aria-labelledby="lbl-type">
@@ -174,7 +179,7 @@
 
     <!-- MATCHING -->
     <div class="field" id="matchBlock" style="display:none;">
-      <label id="lbl-match">Parejas <span class="hint">— cada elemento de la izquierda se empareja con su respuesta. Mínimo 3.</span></label>
+      <label id="lbl-match">Parejas <span class="hint">— cada elemento de la izquierda se empareja con su respuesta. Mínimo 3. Puedes agregar una imagen al elemento (icono 🖼️); la respuesta de la derecha siempre debe ser texto, es una limitación del formato de Moodle.</span></label>
       <div id="matchList" aria-labelledby="lbl-match"></div>
       <button type="button" class="add-opt" id="addPair">+ Agregar pareja</button>
       <div class="err-msg" id="errMatch">Necesitas al menos 3 parejas completas (elemento y respuesta).</div>
@@ -245,7 +250,7 @@
 
     <div style="display:flex;gap:10px;margin-top:18px;">
       <button class="btn btn-primary btn-block" id="addBtn">Agregar a la lista</button>
-      <button class="btn btn-ghost" id="clearBtn" style="display:none;">Cancelar</button>
+      <button class="btn btn-ghost" id="clearBtn" style="display:none;">+ Nueva pregunta</button>
     </div>
   </section>
 
