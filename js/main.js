@@ -105,6 +105,66 @@
   var FRACS = {1:'100',2:'50',3:'33.33333',4:'25',5:'20',6:'16.66667',7:'14.28571',8:'12.5',9:'11.11111',10:'10'};
   var SA_FRACS = ['100','90','80','75','66.66667','60','50','40','33.33333','25','20','10','0'];
 
+  // ---------- Novedades (Fase 7) ----------
+  // Historial de cambios en lenguaje de docente, más nuevo primero. Al entregar una
+  // versión nueva, agregar una entrada aquí arriba — es lo único que hay que tocar.
+  var WHATS_NEW = [
+    { version:'v1.8', date:'29 de julio de 2026',
+      title:'Prompts de la IA personalizados por materia',
+      items:[
+        'La instrucción que se genera para la IA ya no es la misma para todas las materias: cada una (Sociales, Inglés, Artística, Ética, Ciudadanas, Tecnología...) trae ahora un enfoque pedagógico propio, pensado para ese tipo de pregunta.',
+        'Inglés: la instrucción ahora le pide a la IA redactar la pregunta completa en inglés, no solo hablar sobre el idioma en español.',
+        'Ciencias Naturales se sumó al grupo que pide fórmulas en LaTeX (junto a Matemáticas, Física y Química) y las dibuja solas al importarlas.'
+      ] },
+    { version:'v1.7', date:'29 de julio de 2026',
+      title:'Panel de Novedades y buzón para escribirme',
+      items:[
+        'Este panel es nuevo: aquí vas a poder revisar qué cambió en cada versión, en español sencillo.',
+        'Nuevo botón <b>✉️ Contáctame</b>: escríbeme un error o una idea directo desde la app, sin salir de ella.'
+      ] },
+    { version:'v1.6', date:'29 de julio de 2026',
+      title:'Fórmulas en el Word y examen listo para imprimir',
+      items:[
+        'Al descargar en Word, las fórmulas matemáticas ahora se ven dibujadas como en el enunciado, no como código.',
+        'Nueva configuración de plantilla de examen: escudo del colegio, datos de identificación y encabezado listos para imprimir.',
+        'Las preguntas se pueden imprimir en una o dos columnas.'
+      ] },
+    { version:'v1.5', date:'29 de julio de 2026',
+      title:'Lienzo de dibujo y fotos más livianas',
+      items:[
+        'Nuevo lienzo para dibujar a mano (cuadriculado, líneas, plano cartesiano y más fondos).',
+        'Las fotos que subes ahora se ajustan de tamaño solas en vez de ser rechazadas.'
+      ] },
+    { version:'v1.4', date:'29 de julio de 2026',
+      title:'Generador con IA mejorado',
+      items:[
+        'Lista de asignaturas comunes para elegir más rápido al generar preguntas con IA.',
+        'Confirmación más clara al copiar la instrucción para la IA.'
+      ] },
+    { version:'v1.3', date:'29 de julio de 2026',
+      title:'Nuevo apartado de Matemáticas',
+      items:[
+        'Preguntas de respuesta numérica con varias respuestas válidas, tolerancia y unidades.',
+        'Editor de fórmulas con vista previa dibujada.',
+        'Preguntas calculadas: se definen rangos y cada estudiante recibe números distintos.',
+        'El generador con IA ya entiende matemáticas: para Matemáticas, Física o Química, le pide las fórmulas en LaTeX y las dibuja solas al importarlas — llegan a tu banco de preguntas ya como fórmula, no como código.'
+      ] },
+    { version:'v1.2', date:'28 de julio de 2026',
+      title:'Emparejamiento con imágenes y vista previa más fiel',
+      items:[
+        'El emparejamiento ahora admite imágenes en el lado izquierdo.',
+        'Aviso claro de "editando" al modificar una pregunta ya creada.',
+        'La vista previa se parece más a como se ve de verdad en Moodle.'
+      ] }
+  ];
+  var WN_SEEN_KEY = 'trendi_whatsnew_seen';
+
+  // ---------- Buzón de sugerencias (Fase 8) ----------
+  // Envía por Web3Forms: sin backend propio, la "access key" es pública por diseño
+  // (rate-limited por clave, igual que Formspree). No es un secreto que haya que ocultar.
+  var WEB3FORMS_KEY = '59a84c2a-ec04-4b70-92a0-555769eb77a7';
+  var WEB3FORMS_URL = 'https://api.web3forms.com/submit';
+
   // ---------- Elements ----------
   var $ = function(id){return document.getElementById(id);};
   var stmt=$('stmt'), opts=$('opts'), tray=$('tray'), preview=$('preview');
@@ -2837,6 +2897,73 @@
     var d=$('helpDlg'); if(d.showModal) d.showModal(); else d.setAttribute('open','');
   };
 
+  // ---------- Novedades ----------
+  function renderWhatsNew(){
+    $('whatsNewBody').innerHTML = WHATS_NEW.map(function(e){
+      return '<div class="wn-entry">'
+        +'<div class="wn-head"><span class="wn-ver">'+esc(e.version)+'</span><span class="wn-date">'+esc(e.date)+'</span></div>'
+        +'<h4>'+esc(e.title)+'</h4>'
+        +'<ul>'+e.items.map(function(it){ return '<li>'+it+'</li>'; }).join('')+'</ul>'
+        +'</div>';
+    }).join('');
+  }
+  function updateWhatsNewDot(){
+    var lastSeen = localStorage.getItem(WN_SEEN_KEY);
+    $('whatsNewDot').hidden = (lastSeen === WHATS_NEW[0].version);
+  }
+  $('whatsNewOpenBtn').onclick=function(){
+    renderWhatsNew();
+    var d=$('whatsNewDlg'); if(d.showModal) d.showModal(); else d.setAttribute('open','');
+    localStorage.setItem(WN_SEEN_KEY, WHATS_NEW[0].version);
+    $('whatsNewDot').hidden = true;
+  };
+
+  // ---------- Buzón de sugerencias ----------
+  // El aviso va inline en #suggestMsg (nunca por toast: el toast global queda tapado
+  // por cualquier <dialog> abierto — ver la nota grande sobre esto en CLAUDE.md).
+  function suggestSay(msg, ok){
+    var el=$('suggestMsg');
+    el.textContent = msg;
+    el.className = 'err-msg' + (msg ? ' show' : '') + (ok ? ' ok' : '');
+  }
+  $('suggestOpenBtn').onclick=function(){
+    suggestSay('');
+    var btn=$('suggestSendBtn'); btn.disabled=false; btn.textContent='Enviar mensaje';
+    var d=$('suggestDlg'); if(d.showModal) d.showModal(); else d.setAttribute('open','');
+    $('suggestBody').focus();
+  };
+  $('suggestSendBtn').onclick=function(){
+    var body = $('suggestBody').value.trim();
+    if(!body){ suggestSay('Escribe tu mensaje antes de enviar.', false); $('suggestBody').focus(); return; }
+    if($('suggestHoney').value){ suggestSay('¡Gracias! Tu mensaje fue enviado.', true); return; } // bot: fingimos éxito, no enviamos nada
+
+    var btn=$('suggestSendBtn');
+    btn.disabled=true; btn.textContent='Enviando…'; suggestSay('');
+    var name=$('suggestName').value.trim(), email=$('suggestEmail').value.trim();
+    fetch(WEB3FORMS_URL, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      body:JSON.stringify({
+        access_key: WEB3FORMS_KEY,
+        subject: 'Mensaje desde Trendi — Generador de Cuestionarios',
+        from_name: name || 'Docente (sin nombre)',
+        name: name, email: email, message: body
+      })
+    }).then(function(r){ return r.json(); }).then(function(data){
+      if(data && data.success){
+        btn.textContent='✓ Enviado, ¡gracias!';
+        suggestSay('Tu mensaje llegó correctamente. ¡Gracias por escribir!', true);
+        $('suggestBody').value=''; $('suggestName').value=''; $('suggestEmail').value='';
+      } else {
+        btn.disabled=false; btn.textContent='Enviar mensaje';
+        suggestSay('No se pudo enviar. Inténtalo de nuevo en un momento.', false);
+      }
+    }).catch(function(){
+      btn.disabled=false; btn.textContent='Enviar mensaje';
+      suggestSay('No se pudo enviar (revisa tu conexión). Tu mensaje sigue escrito arriba.', false);
+    });
+  };
+
   // Asignatura: lista de materias comunes + "Otra…" con campo libre. #aiSubject sigue
   // siendo el campo que buildAIPrompt() lee; el <select> solo lo alimenta.
   var aiSubjectSel=$('aiSubjectSel'), aiSubjectInp=$('aiSubject');
@@ -2848,6 +2975,44 @@
     }
   };
 
+  // Fase 9: para estas 4 materias le pedimos LaTeX a la IA porque MathLive (el motor
+  // que dibuja las fórmulas al importar, ver detectAndRenderLatex) sí cubre bien su
+  // notación estándar — vectores, fracciones, subíndices/superíndices. Comprobado con
+  // MathLive.convertLatexToMarkup() en vivo: \ce{...} (el paquete mhchem de química)
+  // SÍ existe como comando pero MathLive no lo reconoce y lo dibuja mal sin lanzar
+  // error ("2H_2+O_2 \ce{...}" sale como basura tipo "2HX2+OX2…"), por eso el prompt
+  // le pide a la IA química con subíndices sueltos (\(H_2O\), \(Na^+\)) y flechas
+  // (\(\rightarrow\), \(\rightleftharpoons\)) en vez de \ce{}. "Ciencias Naturales" se
+  // sumó aquí (2026-07-29, más tarde): el importador ya reconoce \( … \) sin importar
+  // la materia, así que extender la instrucción no agrega riesgo técnico nuevo.
+  var MATH_PROMPT_SUBJECTS = ['matemáticas','física','química','ciencias naturales'];
+  function isMathSubject(s){ return MATH_PROMPT_SUBJECTS.indexOf(String(s||'').trim().toLowerCase())>-1; }
+
+  // Enfoque pedagógico por asignatura (2026-07-29, más tarde). Nombres EXACTOS de las
+  // <option> de #aiSubjectSel — un typo aquí simplemente no encuentra coincidencia y no
+  // rompe nada (default '' abajo). A propósito NO repite instrucciones de LaTeX para
+  // Matemáticas/Física/Química/Ciencias Naturales: esa regla ya la controla `mathLine`,
+  // que es la que de verdad se probó contra lo que MathLive soporta — repetirla aquí
+  // con otra redacción (p. ej. permitiendo "$$") solo arriesgaba contradecirla.
+  var ESPECIFICACIONES_AREA = {
+    'Matemáticas': 'Plantea situaciones de modelación o análisis cuantitativo.',
+    'Ciencias Naturales': 'Incluye contextos experimentales, análisis de variables o tablas de datos.',
+    'Biología': 'Plantea escenarios sobre sistemas biológicos, genética o ecosistemas a partir de datos experimentales.',
+    'Física': 'Relación entre variables físicas y magnitudes, con análisis de causa y efecto.',
+    'Química': 'Reacciones, estequiometría, estructura atómica, tabla periódica o comportamiento ácido-base.',
+    'Ciencias Sociales': 'Presenta eventos históricos o problemáticas socioeconómicas. Evalúa multiperspectivismo sin tomar postura ni emitir juicios moralizantes.',
+    'Historia': 'Causalidad, procesos de cambio y análisis de fuentes históricas, sin memorización de fechas.',
+    'Geografía': 'Dinámicas territoriales, uso de recursos e impacto ambiental en espacios geográficos.',
+    'Competencias Ciudadanas': 'Conflicto de intereses o problemáticas comunitarias. Evalúa mecanismos constitucionales y dilemas morales.',
+    'Lengua Castellana': 'Estímulo basado en texto analítico o literario. Evalúa la intención del autor, la postura del texto y el sentido global (comprensión literal, inferencial y crítica).',
+    'Inglés': 'Redacta el estímulo, la pregunta y las opciones DIRECTAMENTE EN INGLÉS (no en español), con vocabulario y gramática acordes al grado. Evalúa comprensión lectora y uso del idioma en contexto.',
+    'Tecnología e Informática': 'Pensamiento computacional, lógica de algoritmos e impacto de la tecnología en la sociedad.',
+    'Ética y Valores': 'Dilemas éticos con posturas contrapuestas y justificación razonada de decisiones.',
+    'Educación Religiosa': 'Dimensión sociocultural de tradiciones y respeto por la diversidad de creencias, sin adoptar una postura confesional.',
+    'Educación Artística': 'Describe en palabras una obra, técnica o manifestación artística (esta herramienta no genera imágenes) y evalúa lenguaje artístico y apreciación estética.',
+    'Educación Física': 'Hábitos saludables, biomecánica básica y juego limpio.'
+  };
+
   function buildAIPrompt(){
     var n=parseInt($('aiCount').value,10); if(isNaN(n)||n<1) n=3; if(n>20) n=20;
     var grado=$('aiGrade').value.trim()||'(no especificado)';
@@ -2857,19 +3022,27 @@
     var compLine = compRaw
       ? '- Competencia(s) a evaluar: '+compRaw+'\n'
       : '- Competencia(s) a evaluar: no se especificaron; elige tú las competencias más pertinentes para el grado y el tema, siguiendo el enfoque del ICFES.\n';
+    var areaLine = ESPECIFICACIONES_AREA[asig]
+      ? 'Enfoque específico para esta asignatura: '+ESPECIFICACIONES_AREA[asig]+'\n\n'
+      : '';
+    var mathLine = isMathSubject(asig)
+      ? '5. Fórmulas y notación matemática: cada expresión, ecuación o símbolo matemático que aparezca (en el enunciado o en las opciones) debe ir en LaTeX envuelto EXACTAMENTE en \\( y \\) — por ejemplo \\(x^2+5=9\\). No uses $ ni \\[ \\]. Si es química, escribe las fórmulas con subíndices y superíndices normales de LaTeX (\\(H_2O\\), \\(Na^+\\)) y flechas \\(\\rightarrow\\) o \\(\\rightleftharpoons\\); NO uses el comando \\ce{}, aquí no se dibuja bien.\n'
+      : '';
     return 'Actúa como un experto en diseño de evaluaciones educativas bajo el modelo basado en evidencias del ICFES (Instituto Colombiano para la Evaluación de la Educación). Tu objetivo es diseñar preguntas de selección múltiple con única respuesta que evalúen competencias y no la simple memorización de datos.\n\n'+
       'Por favor, genera '+n+' preguntas basadas en los siguientes datos de la asignatura:\n'+
       '- Grado: '+grado+'\n'+
       '- Asignatura: '+asig+'\n'+
       '- Tema(s): '+tema+'\n'+
       compLine+'\n'+
+      areaLine+
       'Requisitos estrictos para cada pregunta:\n'+
       '1. Contexto o estímulo: cada pregunta debe iniciar con una situación de la vida real, un caso, un gráfico descrito en texto, un experimento o un fragmento de texto analítico. El estudiante debe necesitar leer y analizar el contexto para responder.\n'+
       '2. Enunciado claro: una pregunta directa derivada del contexto.\n'+
       '3. Cuatro opciones de respuesta (A, B, C, D):\n'+
       '- Solo UNA debe ser la respuesta correcta y metodológicamente irreprochable.\n'+
       '- Las otras tres deben ser distractores plausibles (que parezcan correctos si el estudiante tiene un error conceptual común, pero que sean falsos). Evita distractores absurdos o el uso de "todas las anteriores".\n'+
-      '4. Al final de cada pregunta indica la opción correcta únicamente con la línea "ANSWER:" seguida de la letra correspondiente (ejemplo: ANSWER: B).\n\n'+
+      '4. Al final de cada pregunta indica la opción correcta únicamente con la línea "ANSWER:" seguida de la letra correspondiente (ejemplo: ANSWER: B).\n'+
+      mathLine+'\n'+
       'Entrega el resultado exclusivamente en texto plano con formato Aiken: primero el enunciado (puede ocupar varias líneas, incluyendo el contexto), luego las cuatro opciones una por línea con el formato "A) texto", "B) texto", "C) texto" y "D) texto", y por último la línea "ANSWER: X". No numeres las preguntas, no uses viñetas, negrillas, tablas, bloques de código ni formatos interactivos. Separa cada pregunta de la siguiente con una línea en blanco.';
   }
 
@@ -2907,6 +3080,26 @@
       navigator.clipboard.writeText(txt).then(ok, function(){ legacyCopy(txt)?ok():ko(); });
     } else { legacyCopy(txt)?ok():ko(); }
   };
+
+  // Fase 9: convierte los \( … \) que la IA haya escrito dentro de texto plano en el
+  // MISMO bloque span.fx que arma el editor manual (Fase 2) — mismo `data-latex`, mismo
+  // dibujo vía renderLatex(). El texto que no es fórmula se escapa con esc(), como
+  // siempre. Si la IA no respetó el delimitador exacto \( … \) (usó $ o Markdown, por
+  // ejemplo), simplemente no hay coincidencias y todo el texto sale escapado tal cual
+  // — nunca rompe la importación por una fórmula mal delimitada.
+  function escAttr(s){ return esc(s).replace(/"/g,'&quot;'); }
+  function detectAndRenderLatex(text){
+    var re=/\\\(([\s\S]+?)\\\)/g;
+    var out='', last=0, m;
+    while((m=re.exec(text))){
+      out += esc(text.slice(last, m.index));
+      var latex=m[1].trim();
+      out += '<span class="fx" contenteditable="false" data-latex="'+escAttr(latex)+'">'+renderLatex(latex)+'</span>';
+      last = re.lastIndex;
+    }
+    out += esc(text.slice(last));
+    return out;
+  }
 
   // Parser Aiken resiliente: enunciado multilínea -> opciones "A)" / "A." -> "ANSWER: X".
   // El formato Aiken es el estándar de texto plano que pedimos a la IA. Este parser
@@ -2956,9 +3149,11 @@
     }
     var stamp=Date.now();
     res.questions.forEach(function(p,k){
-      var stmtHtml=p.statement.split('\n').map(function(l){return esc(l);}).join('<br>');
+      // detectAndRenderLatex ya deja el texto escapado (con o sin fórmulas dentro);
+      // por eso las opciones se marcan optsHtml:true — no hay que volver a esc() nada.
+      var stmtHtml=detectAndRenderLatex(p.statement).replace(/\n/g,'<br>');
       var cleanOpts=(p.opts||[]).filter(function(o){return o && String(o.text).trim();})
-        .map(function(o){return {text:String(o.text).trim(), correct:!!o.correct};});
+        .map(function(o){return {text:detectAndRenderLatex(String(o.text).trim()), correct:!!o.correct};});
       if(cleanOpts.length<2 || !cleanOpts.some(function(o){return o.correct;})){ res.skipped++; return; }
       questions.push({
         id:'q'+stamp+'_'+k,
@@ -2968,6 +3163,7 @@
         passageId:'', image:null, tags:[], genfb:'',
         grade:'1', penalty:'0', shuffle:true,
         single:true,
+        optsHtml:true,
         opts:cleanOpts
       });
     });
@@ -3002,4 +3198,5 @@
   renderOpts(); renderSA(); renderNum(); renderUnits();
   renderCalcVars(); renderCalcOpts(); renderCalcSample(); renderMatch(); renderImg(); renderTags();
   applyType(); renderPreview(); renderTray();
+  updateWhatsNewDot();
 })();

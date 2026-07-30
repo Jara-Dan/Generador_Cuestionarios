@@ -63,7 +63,9 @@
   <!-- IA + instrucciones: lanzadores -->
   <div style="grid-column:1/-1;display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:-6px;">
     <button type="button" class="btn btn-ai" id="aiOpenBtn" aria-haspopup="dialog">✨ Generar preguntas tipo ICFES con IA</button>
-    <button type="button" class="btn btn-ghost" id="helpOpenBtn" aria-haspopup="dialog">📖 Instrucciones de uso</button>
+    <button type="button" class="btn btn-surface" id="helpOpenBtn" aria-haspopup="dialog">📖 Instrucciones de uso</button>
+    <button type="button" class="btn btn-accent-soft" id="whatsNewOpenBtn" aria-haspopup="dialog" style="position:relative;">🆕 Novedades<span id="whatsNewDot" class="new-dot" hidden></span></button>
+    <button type="button" class="btn btn-surface" id="suggestOpenBtn" aria-haspopup="dialog">✉️ Contáctame</button>
   </div>
 
   <!-- EDITOR -->
@@ -791,13 +793,13 @@
       <button class="btn btn-ghost btn-sm" value="close" type="submit">Cerrar</button>
     </div>
     <div style="padding:20px 22px;" class="guide">
-      <p class="lead">Esta herramienta te ayuda a crear preguntas y descargarlas como un archivo <b>Moodle XML</b> que luego subes a tu curso. Todo se guarda solo en este navegador; no necesitas cuenta ni internet para usarla.</p>
+      <p class="lead">Esta herramienta te ayuda a crear preguntas y descargarlas como un archivo <b>Moodle XML</b> que luego subes a tu curso. Todo se guarda solo en este navegador — no necesitas cuenta para usarla. Es un proyecto que sigue creciendo con lo que los mismos docentes van necesitando: si algo no te funciona o se te ocurre una mejora, cuéntamelo desde <b>✉️ Contáctame</b>.</p>
 
       <h4><span class="g-num">1</span> Crear pregunta</h4>
-      <p>Elige el <b>tipo de pregunta</b> (opción múltiple, verdadero/falso, respuesta corta, numérica, emparejar, huecos o ensayo). Escribe el <b>enunciado</b>, marca la(s) respuesta(s) correcta(s) y, si quieres, agrega una <b>imagen</b>, <b>etiquetas</b> o una <b>lectura/estímulo</b>. Cuando esté lista, pulsa <b>Agregar a la lista</b>. La vista previa de la derecha te muestra cómo se verá.</p>
+      <p>Elige el <b>tipo de pregunta</b> (opción múltiple, verdadero/falso, respuesta corta, emparejar, huecos, ensayo o el grupo <b>Matemáticas</b> —numérica y calculada—). Escribe el <b>enunciado</b>, marca la(s) respuesta(s) correcta(s) y, si quieres, agrega una <b>imagen</b> (cargada, tomada con la cámara o dibujada a mano), <b>etiquetas</b> o una <b>lectura/estímulo</b>. Cuando esté lista, pulsa <b>Agregar a la lista</b>. La vista previa de la derecha te muestra cómo se verá.</p>
 
       <h4><span class="g-num">✨</span> Generar preguntas tipo ICFES con IA</h4>
-      <p>¿Quieres ahorrar tiempo? Este botón abre un asistente en dos pasos: <b>(1)</b> completas grado, asignatura y tema, y copias una instrucción lista para pegar en una IA (ChatGPT, Claude, Gemini); <b>(2)</b> pegas la respuesta de la IA y las preguntas entran solas a tu lista. Recuerda <b>revisar siempre</b> lo que genera la IA antes de exportar.</p>
+      <p>¿Quieres ahorrar tiempo? Este botón abre un asistente en dos pasos: <b>(1)</b> completas grado, asignatura y tema, y copias una instrucción lista para pegar en una IA (ChatGPT, Claude, Gemini); <b>(2)</b> pegas la respuesta de la IA y las preguntas entran solas a tu lista. Si la asignatura es <b>Matemáticas, Física o Química</b>, la instrucción también le pide las fórmulas en LaTeX, y al importar se dibujan solas. Recuerda <b>revisar siempre</b> lo que genera la IA antes de exportar.</p>
 
       <h4><span class="g-num">📖</span> Lecturas / estímulos</h4>
       <p>Con <b>Gestionar lecturas</b> creas textos o fragmentos que varias preguntas pueden compartir (por ejemplo, un cuento o un caso). Luego asocias cada pregunta a su lectura desde el formulario.</p>
@@ -806,9 +808,49 @@
       <p>Aquí se acumulan todas tus preguntas, las creadas a mano y las generadas con IA. Sobre cada una puedes <b>Editar</b> (hacer ajustes), <b>Duplicar</b> o <b>Eliminar</b>. Editar funciona igual para cualquier pregunta, venga de donde venga.</p>
 
       <h4><span class="g-num">3</span> Descargar y respaldar</h4>
-      <p>El botón <b>Descargar XML</b> genera el archivo para Moodle. Para usarlo: entra a tu curso → <b>Banco de preguntas → Importar</b> → formato <b>"Moodle XML"</b> → sube el archivo. Con <b>Guardar respaldo (JSON)</b> conservas una copia para seguir editando aquí o pasarla a otro equipo; con <b>Restaurar respaldo</b> la recuperas.</p>
+      <p>El botón <b>Descargar XML</b> genera el archivo para Moodle. Para usarlo: entra a tu curso → <b>Banco de preguntas → Importar</b> → formato <b>"Moodle XML"</b> → sube el archivo. ¿La vas a aplicar en papel? <b>Descargar evaluación en Word</b> genera un documento listo para imprimir, con el encabezado que definas en <b>⚙️ Configuración de la plantilla</b>. Con <b>Guardar respaldo (JSON)</b> conservas una copia para seguir editando aquí o pasarla a otro equipo; con <b>Restaurar respaldo</b> la recuperas.</p>
 
       <p class="ai-note" style="margin-top:18px;"><b>Consejo:</b> el trabajo vive en este navegador. Si vas a cambiar de computador o limpiar el historial, guarda primero un respaldo JSON para no perder tus preguntas.</p>
+    </div>
+  </form>
+</dialog>
+
+<!-- Novedades dialog (Fase 7). El contenido de cada versión se arma en JS desde
+     el arreglo WHATS_NEW, así que este cuerpo se llena en tiempo de ejecución. -->
+<dialog id="whatsNewDlg" aria-labelledby="whatsNewDlgTitle" style="border:none;border-radius:14px;padding:0;max-width:560px;width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+  <form method="dialog" style="margin:0;">
+    <div style="padding:20px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--surface);border-radius:14px 14px 0 0;z-index:1;">
+      <h3 id="whatsNewDlgTitle" style="font-size:17px;">🆕 Novedades</h3>
+      <button class="btn btn-ghost btn-sm" value="close" type="submit">Cerrar</button>
+    </div>
+    <div style="padding:20px 22px;" class="guide" id="whatsNewBody"></div>
+  </form>
+</dialog>
+
+<!-- Buzón de sugerencias (Fase 8). Envía por Web3Forms — sin backend propio. -->
+<dialog id="suggestDlg" aria-labelledby="suggestDlgTitle" style="border:none;border-radius:14px;padding:0;max-width:520px;width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+  <form method="dialog" style="margin:0;" id="suggestForm">
+    <div style="padding:20px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--surface);border-radius:14px 14px 0 0;z-index:1;">
+      <h3 id="suggestDlgTitle" style="font-size:17px;">✉️ Contáctame</h3>
+      <button class="btn btn-ghost btn-sm" value="close" type="submit">Cerrar</button>
+    </div>
+    <div style="padding:20px 22px;">
+      <p class="ai-note" style="margin-top:0;">¿Encontraste un error, te falta algo o se te ocurre una mejora? Escríbeme directo — leo todos los mensajes.</p>
+      <div class="field">
+        <label for="suggestName">Tu nombre <span class="hint">(opcional)</span></label>
+        <input type="text" id="suggestName" placeholder="Ej. Daniela Ríos">
+      </div>
+      <div class="field">
+        <label for="suggestEmail">Tu correo <span class="hint">(opcional, por si quiero responderte)</span></label>
+        <input type="text" id="suggestEmail" placeholder="tucorreo@colegio.edu.co">
+      </div>
+      <div class="field">
+        <label for="suggestBody">Tu mensaje</label>
+        <textarea id="suggestBody" rows="5" placeholder="Cuéntame qué pasó o qué te gustaría que la herramienta hiciera…" style="width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface);resize:vertical;line-height:1.45;"></textarea>
+      </div>
+      <input type="text" id="suggestHoney" name="botcheck" style="display:none;" tabindex="-1" autocomplete="off">
+      <button type="button" class="btn btn-primary btn-block" id="suggestSendBtn">Enviar mensaje</button>
+      <p class="err-msg" id="suggestMsg" style="margin-top:10px;"></p>
     </div>
   </form>
 </dialog>

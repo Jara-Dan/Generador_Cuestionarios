@@ -348,6 +348,18 @@
   .btn-ghost{background:var(--surface-2);color:var(--ink);}
   .btn-ghost:hover{background:var(--line);}
   .btn-block{width:100%;}
+  /* Lanzadores sobre el fondo crema (Instrucciones / Novedades / Contáctame): .btn-ghost
+     usa --surface-2, casi idéntico a --bg, y se perdía contra la página. Estos dos usan
+     borde + sombra propia en vez de solo un cambio de relleno, para que se noten incluso
+     cuando el color de fondo case por casualidad. */
+  .btn-surface{background:var(--surface);color:var(--ink);border:1px solid var(--line);box-shadow:0 1px 2px rgba(32,37,31,.05);}
+  .btn-surface:hover{background:var(--surface-2);border-color:#d9cdb8;box-shadow:0 2px 8px rgba(32,37,31,.09);transform:translateY(-1px);}
+  /* Novedades: el único de los tres que debe "avisar" (hay contenido que revisar), así
+     que lleva el acento quemado de la marca en vez del tratamiento neutro. El texto va
+     en --ink, no en --accent-dark: --accent-dark sobre --accent-soft solo da 3.6:1 de
+     contraste (falla AA en texto de 15px), y aquí el color ya lo aporta el fondo/borde. */
+  .btn-accent-soft{background:var(--accent-soft);color:var(--ink);border:1px solid rgba(238,118,35,.4);}
+  .btn-accent-soft:hover{background:var(--accent);color:#fff;box-shadow:0 3px 10px rgba(238,118,35,.32);transform:translateY(-1px);}
   .btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;}
   .btn-sm{padding:9px 13px;font-size:13.5px;border-radius:9px;}
   /* Confirmación de "copiado" en el propio botón: el toast global no sirve dentro de
@@ -440,8 +452,21 @@
   .guide b{color:var(--ink);}
   .guide .lead{font-size:14px;color:var(--ink);background:var(--surface-2);border-radius:10px;padding:13px 15px;margin-bottom:6px;line-height:1.55;}
 
+  /* Novedades (Fase 7) */
+  .new-dot{position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);}
+  .wn-entry{margin-bottom:20px;}
+  .wn-entry:last-child{margin-bottom:0;}
+  .wn-head{display:flex;align-items:baseline;gap:9px;margin-bottom:6px;}
+  .wn-ver{background:var(--accent-soft);color:var(--accent-dark);font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:6px;flex:none;}
+  .wn-date{font-size:11.5px;color:var(--muted);}
+  .wn-entry h4{font-size:14.5px;margin:0 0 7px;color:var(--ink);}
+  .wn-entry ul{margin:0;padding-left:19px;}
+  .wn-entry li{font-size:13.5px;color:var(--muted);line-height:1.55;margin-bottom:3px;}
+  .wn-entry li b{color:var(--ink);}
+
   .err-msg{color:var(--danger);font-size:13px;font-weight:600;margin-top:6px;display:none;}
   .err-msg.show{display:block;}
+  .err-msg.ok{color:var(--correct);}
 
   .help{font-size:12.5px;color:var(--muted);background:var(--surface-2);border-radius:9px;padding:10px 12px;margin-top:14px;line-height:1.45;}
   .help b{color:var(--ink);}

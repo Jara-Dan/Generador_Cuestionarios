@@ -88,13 +88,13 @@ agrupador no se pierda la selección.
 |---|---|---|
 | 1 | Grupo "Matemáticas" + `numerical` completo (varias respuestas con crédito parcial, tolerancia por respuesta, unidades, comodín `*`) | **Hecho** |
 | 2 | Editor de fórmulas con cuadros vacíos (MathLive) + vista previa que renderice | **Hecho** |
-| 3 | Lienzo de dibujo (6 fondos) + reescalado automático de fotos. **Sin cámara propia**, ver abajo | **Hecho, pero ver "Pendiente real de Fase 3" abajo — no cumple el objetivo original** |
+| 3 | Lienzo de dibujo (6 fondos) + reescalado automático de fotos. **Sin cámara propia**, ver abajo | **Hecho** — alcance original cerrado; el reconocimiento de escritura a mano (Mathpix) quedó descartado por ahora, ver "Decisión sobre el alcance de Fase 3" abajo |
 | 4 | `calculated` / `calculatedmulti` con datasets | **Hecho y confirmado en Moodle** |
-| 5 | Fórmulas en el export a Word y huecos `NUMERICAL` en cloze | **Hecho** — falta que Daniel lo imprima de verdad |
-| 6 | **Formato de examen impreso** en el Word (escudo + encabezado editable) | **Hecho** — falta que Daniel lo imprima de verdad |
-| 7 | Botón **«Novedades»** con los cambios de cada versión | Pendiente |
-| 8 | **Buzón de sugerencias** para que los docentes escriban a Daniel | Pendiente |
-| 9 | **Generador con IA: LaTeX → fórmula visual** al importar | Pendiente |
+| 5 | Fórmulas en el export a Word y huecos `NUMERICAL` en cloze | **Hecho** |
+| 6 | **Formato de examen impreso** en el Word (escudo + encabezado editable) | **Hecho** |
+| 7 | Botón **«Novedades»** con los cambios de cada versión | **Hecho** |
+| 8 | **Buzón de sugerencias** para que los docentes escriban a Daniel | **Hecho** |
+| 9 | **Generador con IA: LaTeX → fórmula visual** al importar | **Hecho** |
 
 Las fases 6, 7 y 8 las pidió Daniel el 2026-07-29; el detalle está más abajo. La fase 9
 se agregó el mismo día en una sesión posterior.
@@ -181,9 +181,11 @@ Tamaños medidos (el límite es 1 MB): un dibujo normal ronda los **20–40 KB**
 caso realista —papel milimetrado, el fondo más pesado, más 120 garabatos gruesos— dio
 **325 KB**. En la práctica el docente no va a topar con el techo.
 
-### Pendiente real de Fase 3 (descubierto el 2026-07-29, tarde)
+### Decisión sobre el alcance de Fase 3 (histórico, 2026-07-29)
 
-**Ojo: lo que hay hoy NO es lo que se pidió originalmente.** El `CLAUDE.md` describía
+**Registro histórico: lo que se construyó no era lo que se había hablado
+originalmente**, y por eso quedó esta nota — pero la decisión ya se tomó (ver abajo) y
+la fase está cerrada con el alcance que sí se construyó. El `CLAUDE.md` describía
 la Fase 3 como "lienzo de dibujo y cámara → imagen (sin OCR)", y eso es lo que se
 construyó: un lienzo que produce una imagen estática, igual que cargar un JPG.
 
@@ -516,9 +518,10 @@ Reglas de la tabla `table.qcols`:
 - Si el encabezado está apagado (`exam.on=false`), las columnas también se apagan —
   `exam.columns` se ignora. No tendría con qué alinearse.
 
-**Pendiente de comprobar de verdad:** con la fila-por-pareja el riesgo de la hoja en
-blanco desaparece, pero **sigue sin probarse en Word** cómo se ve una pareja muy
-desigual repartida entre dos hojas.
+**Para el checklist de impresión:** con la fila-por-pareja el riesgo de la hoja en
+blanco desaparece, pero **todavía no se ha visto en Word** cómo queda una pareja muy
+desigual repartida entre dos hojas — agregar ese caso a la revisión cuando Daniel
+imprima de verdad (ver el checklist de las fases 5 y 6, más abajo).
 
 El **número de la pregunta va en la misma línea que el enunciado** (`unwrapFirstBlock()`
 le quita el `<p>` envolvente del editor). Antes ocupaba un párrafo suelto y se
@@ -530,6 +533,82 @@ El respaldo pasó a `version:3` porque ahora incluye `exam`. `adoptExam()` relle
 campos que falten, así que **un respaldo v2 se restaura sin problema** (queda con el
 encabezado por defecto). Comprobado en los dos sentidos.
 
+### Botón «Novedades» (Fase 7)
+
+Al lado de «Instrucciones de uso», abre `#whatsNewDlg` con el historial de cambios en
+lenguaje de docente. Todo el contenido vive en el arreglo `WHATS_NEW` de `js/main.js`
+(cerca de `FRACS`/`SA_FRACS`, antes de la sección `Elements`) — **al entregar una
+versión nueva, la única edición necesaria es agregar una entrada arriba de ese
+arreglo**, con `version`, `date` y `items` (los `items` se insertan como HTML sin
+`esc()`, igual que el resto de la guía, así que admiten `<b>` para resaltar).
+
+El botón muestra un punto naranja (`#whatsNewDot` / clase `.new-dot`) cuando la última
+versión de `WHATS_NEW[0].version` no coincide con lo guardado en `localStorage` bajo
+`trendi_whatsnew_seen`. Se compara solo con la **primera** entrada del arreglo (la más
+nueva), así que el orden de `WHATS_NEW` importa: siempre más nuevo primero. Al abrir el
+diálogo se marca como vista y el punto desaparece; comprobado que persiste entre
+recargas (`localStorage`) y que un docente nuevo (sin esa clave) sí ve el punto.
+
+### Buzón de sugerencias (Fase 8)
+
+Botón «✉️ Contáctame» al lado de «Novedades» (el texto del botón e id internos son
+`suggestOpenBtn`/`suggestDlg`/etc. — se renombró solo la copia visible, no los ids, para
+no generar cambios innecesarios). Se decidió con Daniel entre las opciones
+que dejó pendientes el CLAUDE.md: **Web3Forms**, por ser la que mejor calza con el resto
+de la app — sin backend propio, sin problemas de CORS (a diferencia de un Apps Script),
+con antispam ya integrado, y con un `<dialog>` propio con el estilo de Trendi en vez de
+un widget embebido con marca ajena. Envía por correo, que era lo que Daniel pidió
+(evitar WhatsApp).
+
+- `WEB3FORMS_KEY` (en `js/main.js`, junto a `WN_SEEN_KEY`) es la "access key" pública de
+  la cuenta de Daniel en Web3Forms. **No es un secreto que haya que ocultar**: el
+  servicio está diseñado para que esa clave viva en el navegador — el límite/antispam va
+  por clave, igual que el "form ID" de Formspree. Si algún día llega spam, la clave se
+  regenera desde el panel de Web3Forms sin tocar código.
+- El envío es un `fetch()` JSON directo a `https://api.web3forms.com/submit`, sin
+  backend intermedio.
+- Campo honeypot (`#suggestHoney`, `name="botcheck"`, oculto y fuera del tabulador): si
+  llega lleno, la app **finge éxito y no envía nada** — así un bot no aprende que fue
+  detectado, pero tampoco le llega el correo a Daniel.
+- El aviso de éxito/error va **inline en `#suggestMsg`**, nunca por toast (misma razón
+  que en los demás diálogos: el toast global queda tapado por cualquier `<dialog>`
+  abierto — ver la nota grande sobre esto más abajo). Éxito usa la clase `.err-msg.ok`
+  (verde, `--correct`); error usa `.err-msg` sola (rojo, `--danger`).
+- Si falla el envío (red caída o Web3Forms no responde), **el mensaje escrito NO se
+  borra** — solo se limpian los campos tras un envío exitoso. El docente no pierde lo
+  que escribió si hay que reintentar.
+- Comprobado en vivo: un envío de prueba real llegó con `success:true` desde la API de
+  Web3Forms con la clave de Daniel.
+
+### Los tres lanzadores del encabezado (revisión visual 2026-07-29, tarde)
+
+Daniel reportó que «Instrucciones de uso», «Novedades» y «Contáctame» **no se
+distinguían del fondo**. La causa: `.btn-ghost` (`background:var(--surface-2)`,
+`#f4efe7`) contra el fondo de la página (`--bg`, `#fbf7f1`) es casi el mismo tono — la
+diferencia es real pero demasiado sutil para leerse como botón. `.btn-ghost` se usa en
+**muchos otros sitios** (los «Cerrar» de cada diálogo, «Vaciar lista», «Gestionar
+lecturas»…) y en esos casos sí funciona, porque ahí el botón está sobre una tarjeta
+**blanca** (`--surface`), no sobre el fondo crema — mismo problema, contextos distintos.
+Por eso **no se tocó `.btn-ghost`**: se creó `.btn-surface` (fondo blanco + borde +
+sombra propia) solo para los lanzadores que viven directo sobre `--bg`.
+
+«Novedades» pidió además un color que resaltara. Se usó `.btn-accent-soft`
+(`--accent-soft` de fondo, borde en `--accent`) — el mismo tono "quemado" que ya usa
+`.ai-note b` y la insignia de versión del propio panel de Novedades (`.wn-ver`), así que
+no es un color nuevo en la paleta. **El texto sí queda en `--ink`, no en `--accent-dark`**:
+se probó con `--accent-dark` (el par que usan `.ai-note`/`.wn-ver`) y midiendo el
+contraste real dio **3.6:1**, por debajo del 4.5:1 que exige AA para texto de 15px — esos
+otros usos existentes se salvan por ser insignias pequeñas o texto dentro de un párrafo
+más largo, pero un botón de navegación necesita mejor contraste. El color lo sigue
+aportando el fondo/borde, no el texto. En hover pasa a fondo `--accent` sólido con texto
+blanco, igual que `.btn-primary`. Con esto
+la fila queda con tres pesos visuales a propósito: **botón IA** (degradado, el más
+fuerte) > **Novedades** (acento, medio) > **Instrucciones / Contáctame** (neutro, el
+más discreto) — jerarquía deliberada, no decoración.
+
+`.new-dot` (el punto de "hay algo nuevo") se dejó igual: el anillo blanco de 2px sobre
+un fondo ya anaranjado claro (`--accent-soft`) se sigue viendo, porque el punto en sí usa
+`--accent` sólido, bastante más saturado que el fondo del botón.
 ## El toast global no sirve dentro de un `<dialog>` abierto
 
 Hallazgo del 2026-07-29, verificado midiendo coordenadas: cualquier `<dialog>` abierto
@@ -544,34 +623,13 @@ cambia de texto y de color en vez de lanzar un toast). Si se agregan más accion
 dentro de `aiDlg`, `passageDlg`, `fxDlg` o `helpDlg` que necesiten confirmación visual,
 aplicar el mismo patrón.
 
-## Fases pendientes: qué pidió Daniel exactamente
+## Historial: qué pidió Daniel el 2026-07-29 (fases 7–9, todas cerradas)
 
-Anotado el 2026-07-29 para que no se pierda entre sesiones. Nada de esto está empezado.
-
-### Fase 7 — Botón «Novedades»
-
-Al lado del botón de **«Instrucciones de uso»**, un botón que abra un diálogo con los
-cambios de cada versión, en lenguaje de docente y no de programador («ahora puedes poner
-fracciones en las respuestas», no «se refactorizó `renderOpts`»). Al entregar una versión
-nueva hay que acordarse de añadir su entrada.
-
-### Fase 8 — Buzón de sugerencias
-
-Para que los docentes le escriban a Daniel. **Él prefiere evitar WhatsApp**; querría algo
-por correo. Hay que decidir con él cuando se aborde; el problema de fondo es que la app
-es 100 % estática en GitHub Pages, **sin backend**, así que no puede enviar correo por sí
-misma. Opciones reales:
-
-| Opción | A favor | En contra |
-|---|---|---|
-| Enlace `mailto:` | Cero infraestructura | Necesita cliente de correo configurado; el correo queda expuesto a rastreadores de spam |
-| **Formspree / Formspark** | Formulario dentro de la app, llega al correo, plan gratuito | Depende de un tercero; el endpoint es público (traen antispam) |
-| **Formulario de Google** | Gratis, robusto, respuestas en una hoja de cálculo | Saca al docente de la app; estética distinta |
-
-Recomendación de partida: **Formspree** si se quiere que se sienta parte de la app, o
-**Formulario de Google** si se prefiere cero mantenimiento. En cualquier caso, **no se
-puede ocultar una clave de API en un sitio estático** — hay que elegir un servicio cuyo
-endpoint sea público por diseño. Decidirlo con Daniel antes de programar nada.
+Anotado el 2026-07-29 para que no se pierda entre sesiones. Las fases 7 y 8 (documentadas
+más arriba, en «Botón «Novedades» (Fase 7)» y «Buzón de sugerencias (Fase 8)») se
+hicieron ese mismo día. La Fase 9, de abajo, quedó anotada aquí como pedido y se cerró
+más tarde ese mismo día — el resto de la sección ya incluye cómo quedó construida, lo
+que se verificó antes de construirla y las pruebas finales.
 
 ### Fase 9 — Generador con IA: que reconozca LaTeX al importar
 
@@ -584,40 +642,121 @@ Pedido el 2026-07-29, en una sesión posterior a las fases 6/7/8. Hoy el flujo e
    como texto plano — **cualquier LaTeX que la IA hubiera escrito llegaría como código
    crudo**, no como una fórmula dibujada.
 
-Lo que pidió Daniel: cuando la pregunta sea de matemáticas, que el prompt le pida a la
-IA usar LaTeX (`\( … \)`) para las fórmulas, y que **al importar, la app reconozca esos
-delimitadores y los convierta sola** en los mismos bloques `<span class="fx"
-data-latex="…">` que genera el editor manual (Fase 2) — tanto en el enunciado como en
-las opciones.
+**Lo que pidió Daniel** (retomado y construido el 2026-07-29, más tarde ese mismo día):
+cuando la asignatura sea de matemáticas, que el prompt le pida a la IA usar LaTeX
+(`\( … \)`) para las fórmulas, y que **al importar, la app reconozca esos delimitadores
+y los convierta sola** en los mismos bloques `<span class="fx" data-latex="…">` que
+genera el editor manual (Fase 2) — tanto en el enunciado como en las opciones.
 
-Piezas que ya existen y se pueden reutilizar directamente:
+**Antes de construirlo se verificó, en vivo y no de memoria, si el motor de dibujo
+(MathLive, no MathJax — ver más abajo) realmente cubre física y química**, porque
+Daniel lo pidió para las 3 materias y no solo para matemáticas. Se probó
+`MathLive.convertLatexToMarkup()` directo en la consola con casos reales:
 
-- `renderLatex(latex)` ya convierte un LaTeX a HTML dibujado (la usa el editor y las
-  plantillas del modal ∑). Es la misma función que hay que llamar aquí.
-- El bloque `<span class="fx" contenteditable="false" data-latex="…">` es el formato
-  ya soportado en toda la cadena (XML, Word, migración). No hay que inventar nada nuevo,
-  solo generarlo desde texto importado en vez de desde el modal.
+| LaTeX probado | Resultado |
+|---|---|
+| `\vec{F}=m\vec{a}` (física, vectores) | ✅ perfecto |
+| `H_2O`, `Na^+ + Cl^- \rightarrow NaCl` (química, subíndices/superíndices sueltos) | ✅ perfecto |
+| `\rightleftharpoons` (flecha de reacción reversible) | ✅ se ve el símbolo ⇌ |
+| `\ce{2H2 + O2 -> 2H2O}` (paquete **mhchem**, la forma "correcta" de LaTeX químico) | ❌ **sale garabateado** ("2HX2+OX2…"), sin lanzar ningún error — MathLive no trae ese paquete |
 
-Lo que falta construir:
+Conclusión: física, sin peros (es notación matemática estándar). Química, **con una
+condición real**: hay que pedirle a la IA que NO use `\ce{}` y en cambio escriba
+subíndices/superíndices sueltos y flechas normales — porque el fallo de `\ce{}` no
+lanza excepción, así que el mecanismo de "degradar con gracia" no lo detecta solo; hay
+que evitarlo desde el prompt.
 
-1. En `buildAIPrompt()`: cuando el tema/asignatura sea matemáticas (o un toggle
-   explícito «Esta evaluación es de matemáticas»), añadir una instrucción pidiendo que
-   toda fórmula vaya envuelta en `\( … \)`.
-2. Una función tipo `detectAndRenderLatex(text)` que recorra el texto plano buscando
-   `\( … \)` (y quizá `\[ … \]`), escape con `esc()` los tramos que NO son fórmula, y
-   para los que sí lo son arme el `span.fx` con `renderLatex()` — igual a como
-   `serializeMath()` hace el camino inverso.
-3. Enganchar esa función en `importAiken()`: al construir `stmtHtml` y al limpiar
-   `cleanOpts`, en vez de `esc()` puro. Si se detecta al menos una fórmula en las
-   opciones de una pregunta, hay que marcar `optsHtml:true` en el objeto guardado (ver
-   la sección "Fórmulas en las opciones de respuesta" más arriba) para que no se
-   vuelva a escapar en la próxima migración.
+Piezas que ya existían y se reutilizaron tal cual (como estaba previsto):
 
-Riesgo a vigilar: distintas IA no siempre respetan el delimitador pedido (a veces usan
-`$…$`, o Markdown con negritas alrededor). El prompt debe ser insistente y explícito, y
-`detectAndRenderLatex` debe degradar con gracia (dejar el texto tal cual, escapado) si
-no encuentra el patrón exacto — nunca debe romper una importación por una fórmula mal
-delimitada.
+- `renderLatex(latex)` (la misma del editor y las plantillas del modal ∑) dibuja cada
+  fórmula detectada.
+- El bloque `<span class="fx" contenteditable="false" data-latex="…">` es el mismo que
+  usa todo lo demás (XML, Word, migración, `serializeMath()` de vuelta a `\( … \)`).
+
+Lo que se construyó:
+
+1. **`isMathSubject(s)`** (`js/main.js`, junto a `buildAIPrompt`): compara la asignatura
+   (en minúsculas) contra `['matemáticas','física','química']`. `buildAIPrompt()` añade
+   un requisito 5 condicional solo si coincide, pidiendo `\( … \)` exclusivamente (nada
+   de `$` ni `\[ \]`) y, para química, subíndices/superíndices sueltos en vez de `\ce{}`.
+2. **`detectAndRenderLatex(text)`** (junto a `parseAiken`/`importAiken`): recorre el
+   texto con `/\\\(([\s\S]+?)\\\)/g`, escapa con `esc()` lo que no es fórmula y arma el
+   `span.fx` con `renderLatex()` para lo que sí lo es. Si no hay coincidencias, el
+   resultado es exactamente el mismo `esc(text)` de siempre — **degradación garantizada
+   por diseño**, no por un `try/catch` que pueda fallar.
+3. Enganchada en `importAiken()`: reemplaza el `esc()` plano tanto en el enunciado como
+   en cada opción, y el objeto de la pregunta ahora siempre lleva `optsHtml:true`
+   (antes no lo llevaba — dependía de que `migrateQ()` lo escapara en la próxima carga;
+   con `detectAndRenderLatex` el texto ya sale escapado en el momento, así que
+   **también cierra un hueco real**: antes, una opción importada con un `<` o `&` podía
+   verse rota en la vista previa de la MISMA sesión, antes de recargar la página).
+
+**Se decidió NO aceptar `$…$` como delimitador de respaldo** (Daniel lo eligió
+explícitamente): solo `\( … \)`. Más simple y predecible; si la IA no respeta el
+formato pedido, la fórmula queda como texto plano visible y se nota fácil al revisar.
+
+Comprobado de punta a punta en el navegador (no solo leyendo el código):
+
+- Importación con física (`\(t=\sqrt{\frac{2h}{g}}\)`) → el enunciado y las 4 opciones
+  quedan con `span.fx` correcto, `optsHtml:true`, y la vista previa (`renderPreview()`)
+  y el editor (`#stmt`, cajas de opciones) los dibujan de verdad al editar la pregunta.
+- Importación con química (`H_2O`, `\rightarrow`, sin `\ce{}`) → igual de bien.
+- Texto con delimitador equivocado (`$x+2=5$`) → **no** genera `span.fx`, queda como
+  texto plano escapado, la importación no se rompe.
+- `buildAIPrompt()` con asignatura "Física"/"Química" incluye el requisito 5; con
+  "Historia" no lo incluye.
+- El **XML final de descarga** trae `\(t=\sqrt{\frac{2h}{g}}\)` (lo que Moodle/MathJax
+  necesita), sin rastro del HTML de MathLive — `serializeMath()` hizo la conversión de
+  vuelta exactamente igual que con una fórmula creada a mano.
+
+### Enfoque pedagógico por asignatura en el prompt (2026-07-29, más tarde)
+
+Daniel trajo una propuesta de un tercero (otra IA/consultor) para que el prompt del
+generador variara según la asignatura elegida — hoy `buildAIPrompt()` da la misma
+estructura genérica sin importar la materia. La propuesta traía un diccionario
+`ESPECIFICACIONES_AREA` con una instrucción de enfoque pedagógico por cada una de las
+16 asignaturas del `<select>`. Antes de implementarla se auditó como haría un consultor
+educativo/experto en ICFES **y** se revisó contra el código real:
+
+- **Conflicto real que se corrigió**: la propuesta original mezclaba, dentro del mismo
+  diccionario, instrucciones de notación LaTeX para Matemáticas/Física/Química —
+  pero permitía `\( … \)` **o** `$$ … $$`. Eso habría contradicho la regla que ya
+  construimos y probamos (`mathLine`, más arriba): solo `\( … \)`, sin `$$`, decisión
+  que Daniel ya había tomado explícitamente. Se dejó `ESPECIFICACIONES_AREA` con
+  **solo el enfoque de contenido** para esas materias (sin mencionar notación) y
+  `mathLine` sigue siendo la única fuente de verdad sobre cómo escribir fórmulas.
+- **"Ciencias Naturales" se sumó a `MATH_PROMPT_SUBJECTS`** (antes solo tenía
+  Matemáticas/Física/Química): el importador (`detectAndRenderLatex`) ya reconoce
+  `\( … \)` sin importar la asignatura, así que no había ningún riesgo técnico nuevo en
+  extenderlo — decisión de Daniel, confirmada explícitamente.
+- **Hallazgo de contenido (Inglés)**: la propuesta original no decía en qué idioma
+  escribir la pregunta. Como el resto del prompt está en español, sin esa instrucción
+  era muy probable que la IA generara una pregunta *sobre* inglés pero *en español* —
+  no serviría como ítem real de comprensión/uso del idioma. Se añadió explícitamente
+  "Redacta el estímulo, la pregunta y las opciones DIRECTAMENTE EN INGLÉS".
+- Otros ajustes de contenido: Química se amplió más allá de solo estequiometría
+  (estructura atómica, tabla periódica, ácido-base); Educación Artística se aclaró para
+  que la IA no asuma que hay una imagen adjunta (esta herramienta no genera imágenes,
+  solo texto en formato Aiken).
+- El resto de las 16 entradas se dejaron esencialmente como llegaron — el enfoque de
+  Ciencias Sociales/Ciudadanas/Historia (multiperspectivismo, sin juicios moralizantes,
+  causalidad en vez de fechas) ya estaba bien pensado.
+
+Implementación: `ESPECIFICACIONES_AREA` (objeto, claves = texto EXACTO de cada
+`<option>` de `#aiSubjectSel`) vive junto a `MATH_PROMPT_SUBJECTS`/`isMathSubject`, antes
+de `buildAIPrompt()`. Dentro de `buildAIPrompt()`, `areaLine` busca
+`ESPECIFICACIONES_AREA[asig]` (default `''` si no hay coincidencia — una asignatura
+libre por "Otra…" simplemente no agrega nada, sin romper) y se concatena **justo antes**
+de "Requisitos estrictos para cada pregunta", como pidió Daniel. No toca
+`parseAiken`/`importAiken`/`detectAndRenderLatex`/XML — es un cambio aislado a qué le
+pedimos a la IA, cero riesgo para la invariante de Moodle.
+
+Comprobado en el navegador (capturando el texto real que arma `aiCopyBtn`, no solo
+leyendo el código): Matemáticas/Física/Química/Ciencias Naturales traen el enfoque **y**
+el requisito 5 de LaTeX (sin duplicarse ni contradecirse); Biología/Inglés/Historia
+traen el enfoque **sin** el requisito de LaTeX; una asignatura inventada no agrega nada.
+El prompt completo de Química se revisó línea por línea: el párrafo de enfoque queda
+entre las competencias y los "Requisitos estrictos", sin saltos de línea rotos.
 
 ### Migración de datos guardados
 
@@ -648,10 +787,13 @@ No son suposiciones: se importó un XML de sonda y se revisó la vista previa.
 - La sintaxis `{= … }` también evalúa dentro de `<generalfeedback>`: sirve para
   mostrarle al estudiante la solución desarrollada con sus propios números.
 
-### Pendiente de comprobar de verdad (Fases 5 y 6, 2026-07-29)
+### Checklist de impresión real (Fases 5 y 6 — código cerrado, pendiente de uso)
 
-Todo lo de abajo se verificó **en el navegador**, midiendo. Lo que **falta** es lo que
-solo puede hacer Daniel, y hasta que lo haga no se puede dar por cerrado:
+Las fases 5 y 6 están cerradas en cuanto a código: todo lo de abajo se verificó **en el
+navegador**, midiendo, y no hay nada más que construir. Esta lista queda como
+**checklist de referencia** para la primera vez que Daniel abra el `.doc` en Word de
+verdad e imprima — son cosas que un navegador no puede confirmar por sí solo, no tareas
+de desarrollo pendientes:
 
 1. **Abrir el `.doc` en Word e IMPRIMIRLO.** Puntos a mirar, en orden de riesgo:
    la numeración del pie (si sale un «Página de» suelto, el interruptor del diálogo la
