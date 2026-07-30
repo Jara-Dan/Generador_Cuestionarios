@@ -241,6 +241,11 @@
   .tf button[aria-pressed=true].v{border-color:var(--correct);background:var(--correct-soft);color:var(--correct);}
   .tf button[aria-pressed=true].f{border-color:var(--danger);background:var(--danger-soft);color:var(--danger);}
 
+  /* Segmentado neutro (sin verde/rojo): columnas del examen impreso, Fase 6 */
+  .colseg{display:flex;gap:10px;margin-top:2px;}
+  .colseg button{flex:1;padding:11px;border-radius:10px;border:2px solid var(--line);font-weight:700;font-size:14px;color:var(--muted);background:var(--surface);transition:all .15s;}
+  .colseg button[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-dark);}
+
   /* checkbox row */
   .chk{display:flex;align-items:center;gap:9px;font-weight:600;font-size:13.5px;color:var(--ink);cursor:pointer;}
   .chk input{width:17px;height:17px;accent-color:var(--accent);}
@@ -267,6 +272,11 @@
   .img-prev .meta{flex:1;}
   .img-prev .meta .add-opt{margin-right:12px;}
   @media (max-width:520px){ .img-choose{flex-direction:column;} }
+
+  /* Escudo institucional del examen impreso (Fase 6). Es otro *productor* del mismo
+     objeto imagen que el resto de la app, así que reutiliza los estilos de .img-*;
+     solo cambia el recorte de la miniatura (un escudo no se debe recortar: contain). */
+  #examCrestArea .img-prev img{max-width:96px;max-height:96px;object-fit:contain;background:var(--surface);}
 
   /* ==========================================================================
      LIENZO DE DIBUJO (Fase 3)
@@ -352,6 +362,10 @@
   .prev-stmt{font-weight:500;margin-bottom:12px;}
   .prev-stmt img{max-width:100%;border-radius:8px;margin-top:8px;}
   .prev-stmt .gap{display:inline-block;min-width:70px;border:1px solid #c9c4ba;border-radius:6px;background:var(--surface);color:var(--accent-dark);font-weight:700;text-align:center;padding:2px 8px;}
+  /* Hueco numérico (Fase 5): se distingue del de texto porque Moodle lo califica
+     como número — el docente tiene que ver de un golpe cuál es cuál. */
+  .prev-stmt .gap.num{border-color:#3461b8;color:#3461b8;font-variant-numeric:tabular-nums;}
+  .prev-stmt .gap.bad{border-color:var(--danger);color:var(--danger);background:var(--danger-soft);}
   .prev-opt{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;margin-bottom:5px;background:var(--surface);border:1px solid var(--line);font-size:14px;}
   .prev-opt .circle{width:16px;height:16px;border-radius:50%;border:2px solid #c9c4ba;flex:0 0 auto;display:flex;align-items:center;justify-content:center;}
   .prev-opt .circle.sq{border-radius:5px;}

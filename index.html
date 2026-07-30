@@ -158,8 +158,12 @@
       </div>
       <div class="err-msg" id="errStmt">El enunciado no puede estar vacío.</div>
       <div class="help tip" id="clozeHint" style="display:none;">
-        <b>Huecos:</b> escribe la respuesta entre dobles corchetes, p. ej. <b>La capital de Francia es [[París]].</b>
-        Para varias respuestas válidas usa <b>|</b>: <b>[[París|Paris]]</b>. Huecos detectados: <b id="gapCount">0</b>.
+        <b>Huecos de texto:</b> escribe la respuesta entre dobles corchetes, p. ej. <b>La capital de Francia es [[París]].</b>
+        Para varias respuestas válidas usa <b>|</b>: <b>[[París|Paris]]</b>.<br>
+        <b>Huecos numéricos:</b> empieza con <b>#</b> y Moodle califica el hueco como número, no como
+        texto (así <b>5</b>, <b>5,0</b> y <b>5.00</b> valen igual): <b>El área es [[#25]] cm².</b>
+        Para aceptar un margen de error usa <b>±</b> (o <b>+-</b>): <b>[[#3,14±0,01]]</b>.<br>
+        Huecos detectados: <b id="gapCount">0</b>.
       </div>
     </div>
 
@@ -420,6 +424,9 @@
     </div>
 
     <button class="btn btn-primary btn-block" id="downloadBtn" style="margin-bottom:10px;">⤓ Descargar XML para Moodle</button>
+    <!-- Fase 6: encabezado del examen impreso. Solo afecta al Word, no al XML. Va ARRIBA
+         del botón de Word a propósito: es la configuración que ese botón va a usar. -->
+    <button type="button" class="btn btn-ghost btn-block" id="examOpenBtn" aria-haspopup="dialog" style="margin-bottom:10px;">⚙️ Configuración de la plantilla de evaluación</button>
      <!-- NUEVO BOTÓN PARA WORD -->
     <button class="btn btn-primary btn-block" id="downloadWordBtn" style="margin-bottom:10px; background-color: #2b579a; border-color: #2b579a; color: white;">⤓ Descargar evaluación en Word</button>
     <button class="btn btn-ghost btn-block" id="wipeBtn">Vaciar lista</button>
@@ -462,6 +469,113 @@
       </div>
       <button type="button" class="btn btn-primary btn-sm" id="savePassage">Guardar lectura</button>
       <div style="margin-top:18px;" id="passageList"></div>
+    </div>
+  </form>
+</dialog>
+
+<!-- Formato del examen impreso (Fase 6) — SOLO afecta al archivo de Word.
+     Nada de lo que hay aquí entra en el XML de Moodle. Los avisos de este cuadro
+     van en #examMsg (inline): con un <dialog> abierto el toast global queda tapado. -->
+<dialog id="examDlg" aria-labelledby="examDlgTitle" style="border:none;border-radius:14px;padding:0;max-width:640px;width:94vw;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+  <form method="dialog" style="margin:0;">
+    <div style="padding:20px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <h3 id="examDlgTitle" style="font-size:17px;">⚙️ Configuración de la plantilla de evaluación</h3>
+      <button class="btn btn-ghost btn-sm" value="close" type="submit">Cerrar</button>
+    </div>
+    <div style="padding:20px 22px;max-height:74vh;overflow-y:auto;">
+      <div class="help tip" style="margin-top:0;">
+        Esto es para los docentes que <b>imprimen la evaluación en papel</b>. Se aplica
+        solo al archivo de <b>Word</b>; el XML de Moodle no cambia en nada. Todo se
+        guarda automáticamente.
+      </div>
+
+      <label class="chk" style="margin:4px 0 16px;">
+        <input type="checkbox" id="examOn" checked> Poner el encabezado en el Word
+      </label>
+
+      <div id="examFields">
+        <div class="field">
+          <label id="lbl-crest">Escudo del colegio <span class="hint">— opcional, máx. 1 MB (se reduce solo)</span></label>
+          <input type="file" id="examCrestInput" accept="image/*" style="display:none;" aria-labelledby="lbl-crest">
+          <div id="examCrestArea"></div>
+        </div>
+
+        <div class="field">
+          <label for="examSchool">Nombre del colegio</label>
+          <input type="text" id="examSchool" placeholder="Ej. Institución Educativa San José">
+        </div>
+
+        <div class="field">
+          <label for="examAddress">Dirección, ciudad y NIT / código DANE <span class="hint">— opcional, va debajo del nombre del colegio</span></label>
+          <input type="text" id="examAddress" placeholder="Ej. Calle 10 #5-30, Medellín — NIT 900.123.456-7">
+        </div>
+
+        <div class="field">
+          <label for="examTitle">Título de la evaluación <span class="hint">— si lo dejas vacío se usa «Evaluación de [asignatura]»</span></label>
+          <input type="text" id="examTitle" placeholder="Ej. Primer parcial de Matemáticas">
+        </div>
+
+        <div class="calc-grid" style="margin-top:0;">
+          <div>
+            <label for="examSubject">Asignatura</label>
+            <input type="text" id="examSubject" placeholder="Ej. Matemáticas">
+          </div>
+          <div>
+            <label for="examTeacher">Docente</label>
+            <input type="text" id="examTeacher" placeholder="Ej. Daniel Jara">
+          </div>
+          <div>
+            <label for="examPeriod">Periodo</label>
+            <input type="text" id="examPeriod" placeholder="Ej. Segundo periodo, 2026">
+          </div>
+          <div>
+            <label for="examCourse">Grado / curso</label>
+            <input type="text" id="examCourse" placeholder="Ej. 8-B">
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:16px;">
+          <label for="examInst">Instrucciones para el estudiante <span class="hint">— opcional</span></label>
+          <textarea id="examInst" rows="3" placeholder="Ej. Lee con atención cada pregunta. Marca una sola respuesta. No se permite calculadora." style="width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface);resize:vertical;line-height:1.45;"></textarea>
+        </div>
+
+        <div style="border-top:1px dashed var(--line);padding-top:14px;">
+          <label class="chk" style="margin-bottom:10px;">
+            <input type="checkbox" id="examStudent" checked> Dejar espacio para el nombre del estudiante y la fecha
+          </label>
+          <label class="chk" style="margin-bottom:10px;">
+            <input type="checkbox" id="examScore" checked> Dejar una casilla para la nota
+          </label>
+          <!-- El botón "?" va FUERA del <label>: dentro, al pulsarlo se marcaría la casilla. -->
+          <div style="display:flex;align-items:center;gap:8px;">
+            <label class="chk" style="margin-bottom:0;">
+              <input type="checkbox" id="examPageNums" checked> Numerar las páginas al pie («Página 1 de 4»)
+            </label>
+            <button type="button" class="help-q" data-help="examPnHelp" aria-expanded="false" aria-controls="examPnHelp" aria-label="¿Por qué puedo desactivar la numeración?">?</button>
+          </div>
+          <div class="help tip help-note" id="examPnHelp" style="display:none;">
+            La numeración se le pide a Word con una instrucción especial. Casi siempre
+            funciona, pero <b>si tu Word no la entiende</b> aparecería un «Página de» suelto
+            al final del documento. Si te pasa eso, desactiva esta casilla y vuelve a
+            descargar.
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:16px;margin-bottom:0;">
+          <label id="lbl-examCols">Preguntas en <span class="hint">— cómo se acomodan en el papel</span></label>
+          <div class="colseg" id="examColsGroup" role="group" aria-labelledby="lbl-examCols">
+            <button type="button" data-cols="1" aria-pressed="true">1 columna</button>
+            <button type="button" data-cols="2" aria-pressed="false">2 columnas</button>
+          </div>
+          <div class="help tip" style="margin-bottom:0;">
+            En 2 columnas, una <b>lectura</b> (si la pregunta tiene una) sigue ocupando el
+            ancho completo. Pruébalo imprimiendo: con preguntas muy largas o con imagen,
+            1 columna se ve mejor.
+          </div>
+        </div>
+      </div>
+
+      <div class="err-msg" id="examMsg" style="margin-top:12px;"></div>
     </div>
   </form>
 </dialog>

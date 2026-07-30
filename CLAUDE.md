@@ -29,7 +29,8 @@ de Moodle la soporte de verdad — no basta con que se vea bien en la interfaz.
 | `renderPreview()` | Vista previa — debe imitar cómo Moodle renderiza de verdad |
 | `renderTray()` / `editQ()` | Lista "Mis preguntas" y carga al editar |
 | `buildXML()` + `commonXML()` | Generación del XML de Moodle |
-| Export Word | HTML con estilo `.doc` |
+| `latexToPng()` + `serializeMathWord()` | Fórmulas como imagen para el Word (Fase 5) |
+| `writeWordFile()` + `examHeaderHTML()` | El `.doc` de examen impreso (Fase 6) |
 
 ## Al agregar o cambiar un tipo de pregunta, tocar SIEMPRE estos 6 puntos
 
@@ -89,8 +90,8 @@ agrupador no se pierda la selección.
 | 2 | Editor de fórmulas con cuadros vacíos (MathLive) + vista previa que renderice | **Hecho** |
 | 3 | Lienzo de dibujo (6 fondos) + reescalado automático de fotos. **Sin cámara propia**, ver abajo | **Hecho, pero ver "Pendiente real de Fase 3" abajo — no cumple el objetivo original** |
 | 4 | `calculated` / `calculatedmulti` con datasets | **Hecho y confirmado en Moodle** |
-| 5 | Fórmulas en el export a Word y huecos `NUMERICAL` en cloze | Pendiente |
-| 6 | **Formato de examen impreso** en el Word (escudo + encabezado editable) | Pendiente |
+| 5 | Fórmulas en el export a Word y huecos `NUMERICAL` en cloze | **Hecho** — falta que Daniel lo imprima de verdad |
+| 6 | **Formato de examen impreso** en el Word (escudo + encabezado editable) | **Hecho** — falta que Daniel lo imprima de verdad |
 | 7 | Botón **«Novedades»** con los cambios de cada versión | Pendiente |
 | 8 | **Buzón de sugerencias** para que los docentes escriban a Daniel | Pendiente |
 | 9 | **Generador con IA: LaTeX → fórmula visual** al importar | Pendiente |
@@ -98,10 +99,9 @@ agrupador no se pierda la selección.
 Las fases 6, 7 y 8 las pidió Daniel el 2026-07-29; el detalle está más abajo. La fase 9
 se agregó el mismo día en una sesión posterior.
 
-**Fases 5 y 6 van juntas en una sola sesión de trabajo:** las dos tocan el mismo export
-a Word (una le agrega fórmulas, la otra el encabezado/escudo). Separarlas obligaría a
-tocar la misma función `exportWordBtn` dos veces y a probar la impresión dos veces.
-Abordarlas en la misma sesión, no en sesiones distintas.
+Las fases 5 y 6 se hicieron juntas el 2026-07-29, como estaba previsto: las dos tocaban
+el mismo export a Word. Su documentación está en «Fórmulas en el Word» y «Formato de
+examen impreso», más abajo.
 
 ### Cómo se guarda una fórmula (Fase 2)
 
@@ -114,10 +114,17 @@ un bloque atómico:
 
 - El docente ve la fórmula **dibujada** mientras escribe y no puede romperla por dentro.
 - El LaTeX original viaja en `data-latex`.
-- **`serializeMath()` es obligatorio** antes de mandar el enunciado a cualquier salida:
-  convierte cada bloque a `\( … \)`. Ya está enganchado en `buildStatement()` (XML),
-  el export a Word y `renderTray()`. **Si se añade una salida nueva, hay que llamarlo
-  ahí también**, o el markup de MathLive se colará en el archivo.
+- **Hay que convertir los bloques antes de mandar el enunciado a cualquier salida**, o
+  el markup de MathLive se cuela en el archivo. Hay **dos** conversores y cada salida
+  usa el suyo:
+
+  | Función | Deja | La usan |
+  |---|---|---|
+  | `serializeMath(html)` | `\( … \)` para MathJax | `buildStatement()` (XML) y `renderTray()` |
+  | `serializeMathWord(html, mapa)` | una `<img>` PNG de la fórmula | el export a Word (Fase 5) |
+
+  **Si se añade una salida nueva hay que llamar a la que corresponda.** Si la salida es
+  un archivo que se abre fuera del navegador (Word, PDF), es la segunda.
 
 Detalles de MathLive que costaron descubrir:
 
@@ -137,8 +144,8 @@ mismo objeto imagen** que ya producía el `<input type="file">`
 (`{filename, base64, dataUrl, alt}`). Por eso **no hubo que tocar `buildXML()`,
 `editQ()`, `resetForm()` ni el export a Word** — y por eso el checklist de 6 puntos
 no aplica aquí. Un dibujo viaja a Moodle exactamente igual que un JPG cargado a mano.
-Si algún día se agrega otro productor de imágenes (p. ej. el escudo de la Fase 6),
-lo mismo vale: basta con devolver ese objeto y llamar a `makeImage()`.
+La predicción se cumplió: el **escudo de la Fase 6** es el tercer productor y tampoco
+hubo que tocar nada de eso — basta con devolver ese objeto y llamar a `makeImage()`.
 
 `openDrawDlg(existing, onDone)` es reutilizable, al estilo de `openFxDlg`. Está
 enganchado en dos sitios: la imagen general (`#imgArea`) y el elemento izquierdo del
@@ -290,6 +297,239 @@ que la ausencia no se lea como un fallo.
 El modal de fórmulas es reutilizable: `openFxDlg(target, onDone)` recibe el
 `contenteditable` destino y un callback para volcar el resultado al estado.
 
+### Fórmulas en el Word (Fase 5)
+
+Word **no** entiende LaTeX (imprime `\(x^2\)` tal cual) y tampoco sirve pegarle el
+HTML de MathLive, porque necesita sus tipografías y esas no viajan dentro del `.doc`.
+Lo único que se imprime igual en cualquier equipo es una **imagen**, así que cada
+fórmula se convierte antes de escribir el archivo:
+
+```
+LaTeX → MathJax (salida SVG, glifos como <path>) → <img> → canvas → PNG base64
+```
+
+**Por qué MathJax y no MathLive, que ya estaba cargado:** la salida SVG de MathJax
+dibuja las letras con trazos, así que el SVG es autosuficiente y se puede rasterizar.
+El HTML de MathLive depende de fuentes externas y saldría con letras sustitutas.
+
+Decisiones que hay que respetar:
+
+- **MathJax se carga solo al exportar, y solo si hay fórmulas** (`ensureMathJax()`).
+  Pesa ~1 MB: quien no use matemáticas no paga nada. Por eso el export a Word pasó a
+  ser **asíncrono** (`downloadWordBtn` espera y luego llama a `writeWordFile(mapa)`).
+- `svg:{fontCache:'local'}` es **obligatorio**. Por defecto MathJax guarda los trazos
+  en un `<svg>` compartido de la página; sin `local`, la imagen exportada sale **en
+  blanco**.
+- Se rasteriza a **4x** y se imprime al tamaño real (`MJ_SCALE`). A 1x sale pixelado
+  en papel.
+- La `<img>` lleva las medidas **dos veces**: en atributos (px) y en `style` (pt).
+  Distintas versiones de Word hacen caso a una o a la otra, y sin ninguna imprimirían
+  la imagen a su tamaño real (4x) y se saldría de la hoja.
+- El PNG va con **fondo blanco, no transparente**: al imprimir, algunas versiones de
+  Word pintan de negro el canal alfa.
+- `vertical-align` en pt viene del `vertical-align` en `ex` que trae el SVG, para que
+  una fracción no quede flotando sobre la línea.
+- **Degrada solo:** si el CDN no responde, cada fórmula vuelve al `\( … \)` literal y
+  el archivo se descarga igual, con un aviso. Comprobado simulando la caída del script.
+
+Comprobado midiendo: `\frac{3}{4}+\frac{1}{2}` sale a 35 × 15,1 pt con
+`vertical-align:-4,3pt`, el PNG tiene tinta de verdad (8,9 % de píxeles oscuros, no
+está en blanco) y en el documento de prueba las 6 fórmulas quedaron como imagen y
+**cero** `\(` literales.
+
+### Huecos numéricos en cloze (Fase 5)
+
+Hay **dos clases de hueco** y la diferencia importa para la nota:
+
+| Se escribe | Moodle recibe | Cómo califica |
+|---|---|---|
+| `[[París\|Paris]]` | `{1:SHORTANSWER:=París~=Paris}` | texto literal |
+| `[[#25]]` | `{1:NUMERICAL:=25:0}` | como número: 25, 25,0 y 25.00 valen igual |
+| `[[#3,14±0,01]]` | `{1:NUMERICAL:=3.14:0.01}` | número con margen de error |
+
+- El `#` es solo **nuestra** marca amigable; nunca llega al XML.
+- Para el margen de error valen `±`, `+-` y `~` (un docente no tiene por qué encontrar
+  el `±` en su teclado).
+- **La coma decimal se convierte a punto** al compilar: el docente escribe `3,14` pero
+  el XML de Moodle espera `3.14`.
+- Varias respuestas válidas siguen separándose con `|`, igual que en los de texto.
+- **Un hueco `#` con algo que no sea un número BLOQUEA el guardado.** No es un capricho:
+  rompería la pregunta al importarla, y eso viola la invariante del proyecto. En la
+  vista previa ese hueco sale en rojo y el contador dice cuántos hay mal.
+- `gapStats()` es la única fuente de verdad del recuento (total / texto / numéricos /
+  mal escritos). `countGaps()` quedó como envoltorio suyo.
+- **Trampa:** `gapRe()` devuelve una expresión regular **nueva** en cada llamada. Una
+  `/g` compartida guarda `lastIndex` entre usos y se saltaría huecos.
+
+### Formato de examen impreso (Fase 6)
+
+Es para los docentes que **no suben nada a Moodle**: descargan el Word y aplican la
+evaluación en papel. Vive en el objeto `exam`, que **no es parte de ninguna pregunta**
+—describe la evaluación entera— y **solo lo lee el export a Word**. El XML de Moodle no
+cambia en nada. Se abre con el botón «⚙️ Configuración de la plantilla de evaluación»
+—va **arriba** del botón de Word a propósito, porque es la configuración que ese botón
+va a usar— y se guarda solo.
+
+**El diseño del encabezado sigue al pie de la letra la plantilla de referencia que
+Daniel dejó en `/Plantillas/Plantilla cuestionarios docentes.zip`** (un `.dc.html`
+exportado de una herramienta de diseño, con su miniatura `.thumbnail`). Ese archivo
+**no lo lee la app** — es solo la referencia visual que se usó para construir
+`examHeaderHTML()`; si el diseño cambia otra vez, ese zip es el primer sitio donde mirar.
+De ahí salen dos decisiones que si no se conocen parecen arbitrarias:
+
+- **La tabla de identificación es SIEMPRE 2 filas × 3 columnas**, igual que la
+  plantilla: fila 1 = Estudiante / Grado y curso / Fecha (lo que se llena a mano);
+  fila 2 = Docente / Asignatura / Nota (lo que el docente ya sabe, más la casilla de
+  nota). Los campos que la app ya conoce (`course`, `teacher`, `subject`) se
+  **pre-llenan**; solo quedan en blanco los que de verdad hay que escribir a mano.
+- **El campo se llama «Nota», no «Puntaje»** — así lo tenía la plantilla. Esto es
+  distinto del `grade` de cada pregunta (el puntaje Moodle de esa pregunta en
+  particular): no confundir los dos.
+
+#### Tres correcciones de la primera versión (2026-07-29, tarde)
+
+Daniel comparó el resultado real contra el que quería, con capturas. Los tres defectos
+y su causa, para que no se repitan:
+
+| Se veía | Por qué | Arreglo |
+|---|---|---|
+| Cuadros del encabezado enormes, con mucho aire | Cada dato eran DOS filas: una de etiqueta y otra vacía de `height:26pt` | Un dato = **una celda de una línea** con la etiqueta dentro (`ESTUDIANTE: Carlos`). El encabezado pasó de ~8 cm a **4,0 cm** medidos |
+| El escudo pegado al margen izquierdo | La celda del escudo lo alineaba a la izquierda | `align="right"` en esa celda + anchos **28/44/28 %**. Medido: escudo a 2,6 cm del margen, 72 px hasta el texto, texto centrado en la hoja |
+| **Las preguntas empezaban en la hoja 2** | La tabla de 2 columnas era **una sola `<tr>`** con todas las preguntas dentro, y Word no parte una fila entre páginas: empujaba el bloque entero | **Una fila por pareja** de preguntas (ver «Preguntas en 1 o 2 columnas») |
+
+El cuadro de instrucciones dejó de ser un `<div>` aparte y es la **última fila de la
+misma tabla** (`colspan`): antes el margen entre los dos bloques dejaba un hueco.
+
+#### Tres trampas de Word que salieron de la segunda ronda (mismo día)
+
+Daniel revisó otra vez y aparecieron tres cosas más. Las tres son comportamientos de
+Word que **no se ven en el navegador**, así que están medidas y anotadas:
+
+1. **Word ignora el `text-align:center` puesto por clase** (`td.ident{text-align:center}`)
+   y sacó los datos del colegio alineados a la izquierda. Lo que sí respeta es el
+   **atributo HTML `align="center"`**, y hay que ponerlo en la celda **y en cada
+   párrafo**. La regla CSS se dejó igual porque es la que vale al probar en el
+   navegador; el atributo es el que manda en Word. No quitar ninguno de los dos.
+2. **`padding` en una celda de una tabla `table-layout:fixed` SE SUMA al ancho de la
+   columna** en vez de caber dentro. Por eso un `padding-right` en la celda del escudo
+   la ensanchaba, dejaba de medir lo mismo que la columna vacía de la derecha y **el
+   texto se descentraba** (medido: 16 px fuera del centro de la hoja). La posición del
+   escudo se controla **solo con los anchos de columna**, nunca con relleno.
+3. **El `margin-bottom` de una tabla no sobrevive si lo que sigue es otra tabla** — el
+   caso de 2 columnas. Las preguntas quedaban pegadas al cuadro de instrucciones. La
+   solución es un párrafo separador real (`p.headgap`), que Word sí respeta siempre.
+
+**La composición del encabezado está calibrada por medición, no a ojo.** Los anchos
+`32/36/32 %` cumplen dos condiciones al mismo tiempo, y si se tocan hay que volver a
+comprobar las dos:
+
+- las **columnas laterales iguales** son lo que deja el texto centrado en la HOJA (no
+  solo dentro de su celda). Romper la igualdad lo descentra;
+- con el escudo **centrado en su columna** queda a media distancia: ~1,7 cm del margen
+  y ~2,6 cm del título. Pegado a la izquierda y pegado al título se probaron los dos,
+  y Daniel rechazó ambos.
+
+Medido en el resultado: las tres líneas centran en 343 px con el centro de hoja en
+344 px, columnas laterales de 220 px cada una, escudo sin deformarse (1,50), 0,65 cm
+de aire tras las instrucciones y las preguntas arrancando a 5,0 cm de la hoja 1.
+
+Sin título propio, `examTitleFor()` arma uno con la asignatura («Evaluación de
+Matemáticas»), como en la plantilla — no cae directo al nombre del archivo salvo que
+tampoco haya asignatura. El **periodo** (que la plantilla no muestra) se imprime como
+un subtítulo pequeño bajo el título en vez de forzarlo dentro de la tabla fija de 2×3;
+y la **dirección / ciudad / NIT o código DANE** (`exam.address`, nueva) va como
+subtítulo bajo el nombre del colegio, exactamente como en la plantilla.
+
+El **escudo** es otro *productor* del mismo objeto imagen que el resto de la app (igual
+que el lienzo de la Fase 3): pasa por `readAsImage()` y `makeImage()`. Añade dos cosas:
+
+- `fitCrest()` lo reduce a 420 px como máximo. En el papel mide ~58 pt: guardar 1400 px
+  sería malgastar el localStorage (un escudo típico queda en ~10 KB).
+- Guarda `w` y `h`. **Word necesita las dos medidas explícitas**: con una sola, algunas
+  versiones imprimen la imagen a su tamaño natural y ocuparía media hoja. Con ellas se
+  respeta la proporción — comprobado: un escudo de 900×600 sale a 87 × 58 pt (1,50 en
+  los dos casos, sin deformarse).
+
+Reglas del `.doc` que hay que respetar (**es HTML con extensión `.doc`, no un `.docx`**):
+
+- **Tablas y medidas en pt, nunca flex ni grid.** Word ignora los segundos.
+- **Las opciones van en `<p class="opt">` con sangría, NO en `<ul>`.** Word le pone su
+  propia viñeta a las listas aunque se le diga `list-style:none`, y salía «• A) …».
+  Este era un defecto real del export anterior.
+- `@page WordSection1` fija hoja **Carta** (21,59 × 27,94 cm) y márgenes. Sin `@page`,
+  el documento se abre con los márgenes que tenga configurado el equipo del docente.
+- La **numeración de páginas** usa `mso-footer` + `mso-field-code:PAGE/NUMPAGES`, que es
+  el marcado que Word emite él mismo al guardar como página web. Aun así **el docente
+  puede apagarla** desde el diálogo: si su versión de Word no lo entiende, aparecería un
+  «Página de» suelto al final. Ese interruptor es la vía de escape, no un adorno.
+- Los avisos del diálogo van en `#examMsg` (inline), nunca por toast — ver la sección
+  del toast más abajo.
+
+Dos arreglos de calidad de impresión que salieron de esta fase (no estaban pedidos,
+pero sin ellos el papel no servía):
+
+- **Una lectura compartida se imprime UNA vez**, no repetida en cada pregunta que la
+  usa. Va fuera del `div.question` para que `page-break-inside:avoid` no intente meter
+  lectura + pregunta en la misma página.
+- **El emparejamiento imprime el banco de respuestas.** En papel no hay lista
+  desplegable: sin las opciones a la vista la pregunta era imposible de contestar. Va
+  en orden alfabético (el orden de las parejas regalaría la respuesta) y sale igual en
+  cada exportación.
+
+### Preguntas en 1 o 2 columnas (Fase 6)
+
+`exam.columns` (`'1'` o `'2'`) se elige con un segmentado en el diálogo. La numeración
+de las preguntas es **siempre global** (1, 2, 3…, sin reiniciar por columna): eso lo
+garantiza `questionsHTML()` al asignar el número ANTES de decidir en qué columna cae.
+
+**Por qué una tabla estática y no columnas CSS de verdad (`mso-columns-count`):** Word sí
+soporta columnas reales, pero solo dentro de un salto de sección «continuo», y la
+sintaxis que usa Word para eso en el HTML exportado está pobremente documentada y varía
+entre versiones — es fácil que salga como un salto de **página** en vez de continuo, y
+metería una página en blanco antes de las preguntas. Una tabla se ve **igual en
+cualquier Word**, sin sorpresas.
+
+**Pero tiene que ser UNA FILA POR PAREJA de preguntas, no una fila única.** Este fue un
+bug real: con las 20 preguntas dentro de una sola `<tr>`, Word —que no parte una fila
+entre páginas— empujaba el bloque completo y **la hoja 1 quedaba con solo el
+encabezado**. Con una fila por pareja, las filas son pequeñas y Word las reparte solo.
+
+Consecuencia del diseño, y es la que pidió Daniel: la mitad de las preguntas va a la
+izquierda y la otra mitad a la derecha (`halfSplit()` = `Math.ceil(n/2)`), de modo que
+la pregunta *i* queda **al lado de la *i*+mitad** — con 20 preguntas, la 1 junto a la
+11, la 2 junto a la 12, etc. El precio es que si una pareja es desigual queda aire
+debajo de la más corta; se aceptó a cambio de que la paginación funcione.
+
+Reglas de la tabla `table.qcols`:
+
+- **`table-layout:fixed` es obligatorio** en `table.qcols` y en `table.exhead`. Sin
+  esto, una tabla en modo automático reparte el ancho según el contenido (una columna
+  con una imagen angosta se encoge), no según el 50 %/50 % que se le pide.
+- **Una lectura (`passage`) SIEMPRE corta la tabla de columnas** y se imprime a ancho
+  completo, nunca dentro de una columna angosta. `questionsHTML()` arma "tandas" de
+  preguntas consecutivas entre lectura y lectura, y decide 1 o 2 columnas **tanda por
+  tanda**, no para el examen completo.
+- **Una sola pregunta en la tanda nunca genera la tabla** (no tendría sentido partir
+  una pregunta sola en "2 columnas" con la derecha vacía).
+- Si el número de preguntas es impar, la última fila lleva la celda derecha vacía
+  (`&nbsp;`): una celda ausente descuadraría los anchos.
+- Si el encabezado está apagado (`exam.on=false`), las columnas también se apagan —
+  `exam.columns` se ignora. No tendría con qué alinearse.
+
+**Pendiente de comprobar de verdad:** con la fila-por-pareja el riesgo de la hoja en
+blanco desaparece, pero **sigue sin probarse en Word** cómo se ve una pareja muy
+desigual repartida entre dos hojas.
+
+El **número de la pregunta va en la misma línea que el enunciado** (`unwrapFirstBlock()`
+le quita el `<p>` envolvente del editor). Antes ocupaba un párrafo suelto y se
+desperdiciaba media hoja.
+
+### Respaldo JSON: versión 3
+
+El respaldo pasó a `version:3` porque ahora incluye `exam`. `adoptExam()` rellena los
+campos que falten, así que **un respaldo v2 se restaura sin problema** (queda con el
+encabezado por defecto). Comprobado en los dos sentidos.
+
 ## El toast global no sirve dentro de un `<dialog>` abierto
 
 Hallazgo del 2026-07-29, verificado midiendo coordenadas: cualquier `<dialog>` abierto
@@ -307,23 +547,6 @@ aplicar el mismo patrón.
 ## Fases pendientes: qué pidió Daniel exactamente
 
 Anotado el 2026-07-29 para que no se pierda entre sesiones. Nada de esto está empezado.
-
-### Fase 6 — Formato de examen impreso en el Word
-
-Hay docentes que **no suben nada a Moodle**: descargan el Word y aplican la evaluación
-en papel. Hoy el `.doc` es funcional pero sin identidad. Lo que pidió:
-
-- Un **espacio arriba para el escudo institucional** (subir imagen, igual que las
-  imágenes de pregunta: base64, límite de 1 MB).
-- Un **encabezado genérico de evaluación editable**: nombre del colegio, asignatura,
-  docente, periodo, espacio para nombre del estudiante y fecha, etc.
-- Que quede «un formatico chévere», o sea presentable para imprimir tal cual.
-
-Ojo al implementarlo: el export actual es **HTML con extensión `.doc`**, no un `.docx`
-real. Los encabezados repetidos en cada página y los márgenes de Word se controlan con
-CSS propietario de Word (`@page`, `mso-*`), que no siempre se comporta. Conviene probar
-imprimiendo de verdad, no solo abriendo el archivo. Va junto con la Fase 5, que también
-toca el Word (fórmulas como imagen).
 
 ### Fase 7 — Botón «Novedades»
 
@@ -425,6 +648,26 @@ No son suposiciones: se importó un XML de sonda y se revisó la vista previa.
 - La sintaxis `{= … }` también evalúa dentro de `<generalfeedback>`: sirve para
   mostrarle al estudiante la solución desarrollada con sus propios números.
 
+### Pendiente de comprobar de verdad (Fases 5 y 6, 2026-07-29)
+
+Todo lo de abajo se verificó **en el navegador**, midiendo. Lo que **falta** es lo que
+solo puede hacer Daniel, y hasta que lo haga no se puede dar por cerrado:
+
+1. **Abrir el `.doc` en Word e IMPRIMIRLO.** Puntos a mirar, en orden de riesgo:
+   la numeración del pie (si sale un «Página de» suelto, el interruptor del diálogo la
+   apaga); los márgenes de `@page`; que las imágenes de fórmula queden a la altura del
+   texto y no gigantes; el escudo sin deformarse; y que ninguna pregunta se corte entre
+   dos páginas. **Añadido el 2026-07-29 tarde (rediseño con la plantilla de
+   referencia):** con **2 columnas** y 20 preguntas, comprobar que las preguntas
+   arrancan en la **hoja 1** (era el bug de la fila única) y que las parejas 1↔11,
+   2↔12… se ven alineadas; y que las celdas del encabezado quedan compactas, de una
+   línea, como en la captura que envió Daniel.
+2. **Importar en Moodle un cloze con huecos `#`.** El XML que se genera es
+   `{1:NUMERICAL:=25:0}` y `{1:NUMERICAL:=3.14:0.01}`. La forma con tolerancia ya estaba
+   confirmada arriba; lo que **no** se ha probado en un Moodle real es la **tolerancia 0**
+   (`:0`), que es lo que sale cuando el docente no pide margen de error. Si Moodle se
+   quejara, la alternativa es omitir el `:0` (Moodle asume 0 si no está).
+
 **Requisito de diseño que salió de estas pruebas:** `correctanswerlength` controla
 cuántos decimales se muestran. Con el valor 2, una suma de enteros sale como «5.00»,
 que queda absurdo. El formulario de la Fase 4 **debe dejar que el docente elija los
@@ -432,14 +675,18 @@ decimales** (0 para enteros, 2 para dinero o física).
 
 Cuidado con generalizar: que MathJax esté activo en el Moodle de Daniel no significa
 que lo esté en el de otra institución. El plan B universal es una imagen, y el lienzo
-de la Fase 3 ya lo permite a mano (el docente dibuja la expresión). Convertir una
-fórmula de MathLive a imagen automáticamente **sigue sin hacerse**: si algún día hace
-falta, el sitio donde engancharlo es `serializeMath()`.
+de la Fase 3 lo permite a mano (el docente dibuja la expresión).
+
+Desde la Fase 5 **ya existe el código que convierte una fórmula de MathLive en imagen**
+(`latexToPng()`), pero solo se usa para el Word. Si algún día hace falta también para el
+XML —un Moodle sin MathJax—, esa función es la pieza que hay que reutilizar; el sitio
+donde engancharla sería `buildStatement()`, y habría que emitir además el `<file>`
+hermano de cada imagen, como ya se hace con las demás.
 
 ### Sobre el LaTeX y MathJax
 
 - Hasta la Fase 2, **ni la vista previa ni el export a Word renderizan LaTeX**: se ve
-  el código crudo.
+  el código crudo. Desde la Fase 5 el Word **sí** lo dibuja (como imagen).
 - Decisión tomada: **se acepta depender de librerías externas** (MathLive por CDN). El
   proyecto ya no promete funcionar sin conexión.
 

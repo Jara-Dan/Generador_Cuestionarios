@@ -39,6 +39,9 @@
      Tray ............... lista de preguntas (editar/duplicar/eliminar)
      Backup ............. exportar/importar respaldo JSON
      XML EXPORT ......... construcción del Moodle XML  <-- núcleo delicado
+     FÓRMULAS EN EL WORD  LaTeX -> PNG con MathJax (Fase 5)
+     WORD EXPORT ........ el .doc de examen impreso (Fase 6)
+     Diálogo del formato de examen impreso (escudo + encabezado)
      Generador con IA ... prompt ICFES + parser Aiken
      Toast / Init ....... avisos y arranque
    ========================================================================== */
@@ -74,6 +77,22 @@
   };
   var questions = [];
   var passages = [];
+  // Encabezado del examen impreso (Fase 6). NO es parte de una pregunta ni entra en el
+  // XML: describe la evaluación entera y solo lo lee el export a Word. `crest` es el
+  // mismo objeto imagen que produce el resto de la app ({filename, base64, dataUrl, alt}).
+  function freshExam(){
+    return { on:true, crest:null, school:'', address:'', title:'', subject:'', teacher:'', period:'',
+             course:'', instructions:'', showStudent:true, showScore:true, pageNums:true, columns:'1' };
+  }
+  var exam = freshExam();
+  // Completa los campos que falten (un respaldo viejo no los trae) sin perder los que sí.
+  function adoptExam(raw){
+    var e=freshExam();
+    if(raw && typeof raw==='object'){
+      Object.keys(e).forEach(function(k){ if(raw[k]!=null) e[k]=raw[k]; });
+    }
+    return e;
+  }
   // Clave única en localStorage. El sufijo "_v1" permite versionar el formato:
   // si algún día cambia la estructura guardada, se sube a "_v2" sin pisar datos viejos.
   var KEY = 'trendi_quizgen_v1';
@@ -101,7 +120,7 @@
   // Se llama tras cada cambio relevante para que nada se pierda al recargar.
   function save(){
     try{
-      localStorage.setItem(KEY, JSON.stringify({q:questions, cat:$('category').value, passages:passages}));
+      localStorage.setItem(KEY, JSON.stringify({q:questions, cat:$('category').value, passages:passages, exam:exam}));
       if(!saveOk) setSaveState(true);
     }catch(e){
       // localStorage tiene un límite (~5 MB). Las imágenes en base64 lo llenan rápido:
@@ -113,7 +132,8 @@
   function load(){
     try{
       var d = JSON.parse(localStorage.getItem(KEY)||'null');
-      if(d){ questions = migrateAll(d.q); passages = d.passages||[]; if(d.cat) $('category').value=d.cat; }
+      if(d){ questions = migrateAll(d.q); passages = d.passages||[]; if(d.cat) $('category').value=d.cat;
+             exam = adoptExam(d.exam); }
     }catch(e){}
   }
   // Las preguntas numéricas guardadas antes de la Fase 1 traen {numAns, numTol}:
@@ -879,8 +899,57 @@
   $('addPair').onclick=function(){ state.pairs.push({q:'',a:'',image:null}); renderMatch(); };
 
   // ---------- Cloze ----------
-  function countGaps(html){ var m=html.match(/\[\[[^\]]+\]\]/g); return m?m.length:0; }
-  function updateGapCount(){ $('gapCount').textContent = countGaps(stmt.innerHTML); }
+  /* Hay DOS clases de hueco y la diferencia importa para la nota del estudiante:
+       [[París]]        -> texto:    Moodle compara letra por letra (SHORTANSWER)
+       [[#25]]          -> numérico: Moodle compara NÚMEROS (NUMERICAL), así que
+                                     "5", "5,0" y "5.00" valen lo mismo, y se puede
+                                     admitir un margen de error.
+     El "#" es solo nuestra marca amigable; nunca llega al XML. Comprobado en un
+     Moodle real: {1:NUMERICAL:=5:0.01} importa y califica por hueco.
+     Ojo: la expresión regular se crea NUEVA en cada llamada. Una /g compartida
+     guarda `lastIndex` entre usos y saltaría huecos. */
+  function gapRe(){ return /\[\[([^\]]+)\]\]/g; }
+  function isNumGap(inner){ return /^\s*#/.test(String(inner)); }
+  // Las alternativas van separadas por "|", igual que en los huecos de texto.
+  function gapAlts(inner){
+    return String(inner).replace(/^\s*#/,'').split('|')
+      .map(function(s){return s.trim();}).filter(Boolean);
+  }
+  // "25" | "3,14±0,01" | "3.14 +- 0.01" | "5~0.5"  ->  {val:'3.14', tol:'0.01'}
+  // Devuelve null si no es un número: el docente escribió otra cosa en un hueco #.
+  // La coma decimal se convierte a punto porque el XML de Moodle espera punto,
+  // aunque el docente (y el estudiante) escriban con coma.
+  function parseNumGap(item){
+    var p=String(item).split(/±|\+-|~/);
+    var val=(p[0]||'').trim().replace(',','.');
+    var tol=((p[1]||'0').trim().replace(',','.')) || '0';
+    if(!/^-?\d+(\.\d+)?$/.test(val)) return null;
+    if(!/^\d+(\.\d+)?$/.test(tol)) return null;
+    return {val:val, tol:tol};
+  }
+  // Recuento por clase de hueco. `bad` son huecos # cuyo contenido no es un número:
+  // se bloquea el guardado, porque en Moodle romperían la pregunta entera.
+  function gapStats(html){
+    var out={total:0, text:0, num:0, bad:0};
+    var re=gapRe(), m;
+    while((m=re.exec(String(html)))){
+      out.total++;
+      if(!isNumGap(m[1])){ out.text++; continue; }
+      var alts=gapAlts(m[1]);
+      if(alts.length && alts.every(function(a){ return !!parseNumGap(a); })) out.num++;
+      else out.bad++;
+    }
+    return out;
+  }
+  function countGaps(html){ return gapStats(html).total; }
+  function updateGapCount(){
+    var g=gapStats(stmt.innerHTML), txt=String(g.total);
+    if(g.num || g.bad){
+      txt += ' — '+g.text+' de texto, '+g.num+' numérico'+(g.num===1?'':'s');
+      if(g.bad) txt += ', '+g.bad+' mal escrito'+(g.bad===1?'':'s');
+    }
+    $('gapCount').textContent = txt;
+  }
 
   // ---------- Image ----------
   // Presupuesto de tamaño por imagen. localStorage son ~5 MB EN TOTAL y las
@@ -1424,7 +1493,15 @@
     // que es lo que verá el estudiante.
     if(isCalc(state.type)) h = substCalc(h, currentSample());
     if(state.type==='cloze'){
-      h = h.replace(/\[\[([^\]]+)\]\]/g, function(_,inner){ return '<span class="gap">'+esc(inner.split('|')[0])+'</span>'; });
+      // En Moodle el estudiante ve la caja vacía; aquí se muestra la respuesta, y los
+      // huecos numéricos con su margen de error, para que el docente lo revise.
+      h = h.replace(gapRe(), function(m,inner){
+        var first=gapAlts(inner)[0]||'';
+        if(!isNumGap(inner)) return '<span class="gap">'+esc(first)+'</span>';
+        var p=parseNumGap(first);
+        if(!p) return '<span class="gap num bad">'+esc(m)+'</span>';
+        return '<span class="gap num">'+esc(p.val)+(parseFloat(p.tol)?' ± '+esc(p.tol):'')+'</span>';
+      });
     }
     html += '<div class="prev-stmt">'+(h||'<span style="color:#b3b0a8">Sin enunciado…</span>');
     if(state.image) html += '<img src="'+state.image.dataUrl+'" alt="'+esc(state.image.alt||'')+'">';
@@ -1506,7 +1583,10 @@
       }); }
       else html += '<div class="prev-note">Agrega parejas…</div>';
     } else if(state.type==='cloze'){
-      html += '<div class="prev-note">'+countGaps(stmt.innerHTML)+' hueco(s). En Moodle el estudiante ve esas cajas vacías; aquí muestran la respuesta.</div>';
+      var gp=gapStats(stmt.innerHTML);
+      html += '<div class="prev-note">'+gp.total+' hueco(s). En Moodle el estudiante ve esas cajas vacías; aquí muestran la respuesta.'+
+              (gp.num? (gp.num===1? ' El hueco azul se califica':' Los huecos azules se califican')+' como número (5 = 5,0 = 5.00).':'')+
+              (gp.bad? ' <b>Revisa los huecos en rojo: después del # solo van cifras.</b>':'')+'</div>';
     } else if(state.type==='essay'){
       // En Moodle el alumno escribe en un editor de texto; se representa como caja amplia.
       html += '<div class="prev-essay-box">Espacio de respuesta abierta — el estudiante escribe aquí (calificación manual).</div>';
@@ -1586,7 +1666,15 @@
       var pr=state.pairs.filter(function(p){return (htmlHasText(p.q)||p.image)&&p.a.trim();});
       if(pr.length<3){ showErr('errMatch'); ok=false; }
     } else if(state.type==='cloze'){
-      if(countGaps(stmtHtml)<1){ showErr('errStmt'); $('errStmt').textContent='Agrega al menos un hueco con [[respuesta]].'; ok=false; }
+      var gs=gapStats(stmtHtml);
+      if(gs.total<1){ showErr('errStmt'); $('errStmt').textContent='Agrega al menos un hueco con [[respuesta]].'; ok=false; }
+      // Un hueco numérico con algo que no sea un número rompería la pregunta AL
+      // IMPORTARLA en Moodle, así que se bloquea aquí (invariante del proyecto).
+      else if(gs.bad){
+        showErr('errStmt');
+        $('errStmt').textContent='Hay '+gs.bad+' hueco(s) numérico(s) mal escritos: después del # solo van cifras. Ej. [[#25]] o [[#3,14±0,01]].';
+        ok=false;
+      }
       else { $('errStmt').textContent='El enunciado no puede estar vacío.'; }
     }
     // El texto alternativo de la imagen es opcional (no bloquea el guardado).
@@ -1786,7 +1874,9 @@
     setTimeout(function(){URL.revokeObjectURL(url);},1000);
   }
   $('exportBtn').onclick=function(){
-    var data={version:2, app:'trendi_quizgen', category:$('category').value, questions:questions, passages:passages};
+    // version 3 = incluye `exam` (encabezado del examen impreso). Un respaldo v2 se
+    // sigue restaurando sin problema: adoptExam() rellena lo que falte.
+    var data={version:3, app:'trendi_quizgen', category:$('category').value, questions:questions, passages:passages, exam:exam};
     var name=($('category').value.trim().replace(/[^\w\-]+/g,'_')||'respaldo_trendi')+'.json';
     download(name, JSON.stringify(data,null,2), 'application/json');
     toast('Respaldo JSON descargado');
@@ -1802,7 +1892,8 @@
         if(questions.length && !confirm('Esto reemplazará las '+questions.length+' pregunta(s) actuales por las del respaldo. ¿Continuar?')) return;
         questions=migrateAll(d.questions); passages=Array.isArray(d.passages)?d.passages:[];
         if(d.category!=null) $('category').value=d.category;
-        save(); refreshPassageSelect(); renderTray(); resetForm();
+        exam=adoptExam(d.exam);
+        save(); refreshPassageSelect(); renderTray(); resetForm(); fillExamDlg();
         toast('Respaldo restaurado · '+questions.length+' pregunta(s)');
       }catch(err){ toast('Archivo no válido. Usa un respaldo JSON de esta herramienta.', true); }
     };
@@ -1825,12 +1916,23 @@
   function clozeEsc(s){ return String(s).replace(/([\\{}#~=])/g,'\\$1'); }
 
   // Convierte nuestra sintaxis amigable [[respuesta]] a la sintaxis nativa "cloze" de
-  // Moodle: {1:SHORTANSWER:=respuesta~=alternativa}. El "=" marca la respuesta válida.
-  // clozeEsc() escapa los caracteres { } # ~ = que tienen significado especial en cloze.
+  // Moodle. El "=" marca una respuesta válida y el "1" del principio es el peso del hueco.
+  //   [[París|Paris]]  ->  {1:SHORTANSWER:=París~=Paris}
+  //   [[#3,14±0,01]]   ->  {1:NUMERICAL:=3.14:0.01}
+  // clozeEsc() escapa los caracteres { } # ~ = que tienen significado especial en cloze;
+  // en los numéricos no hace falta (solo hay cifras, punto y signo menos).
   function compileCloze(html){
-    return html.replace(/\[\[([^\]]+)\]\]/g, function(m, inner){
-      var alts=inner.split('|').map(function(s){return s.trim();}).filter(Boolean);
+    return html.replace(gapRe(), function(m, inner){
+      var alts=gapAlts(inner);
       if(!alts.length) return m;
+      if(isNumGap(inner)){
+        var nums=[];
+        alts.forEach(function(a){ var p=parseNumGap(a); if(p) nums.push('='+p.val+':'+p.tol); });
+        // Sin ningún número válido se deja el texto tal cual: la validación de
+        // "Agregar a la lista" ya impide llegar hasta aquí con un hueco # roto.
+        if(!nums.length) return m;
+        return '{1:NUMERICAL:'+nums.join('~')+'}';
+      }
       var body=alts.map(function(a,i){ return (i===0?'=':'~=')+clozeEsc(a); }).join('');
       return '{1:SHORTANSWER:'+body+'}';
     });
@@ -2067,99 +2169,544 @@
     toast('XML descargado · súbelo a tu banco de preguntas');
   };
 
-   // ---------- WORD EXPORT ----------
+  /* ==========================================================================
+     FÓRMULAS EN EL WORD (Fase 5)
+     --------------------------------------------------------------------------
+     Word no entiende LaTeX: si se le pasa  \(x^2\)  imprime esos caracteres tal
+     cual. Y tampoco sirve pegarle el HTML que produce MathLive, porque necesita
+     sus tipografías y esas no viajan dentro del .doc.
+     La única salida que se imprime igual en cualquier equipo es una IMAGEN, así
+     que cada fórmula se convierte antes de escribir el archivo:
+
+        LaTeX → MathJax (salida SVG, glifos como trazos) → <img> → canvas → PNG
+
+     Por qué MathJax y no MathLive: la salida SVG de MathJax dibuja las letras con
+     trazos (<path>), así que el SVG es autosuficiente y se puede rasterizar. El
+     HTML de MathLive depende de fuentes externas y saldría con letras sustitutas.
+
+     Se carga SOLO al exportar y solo si hay fórmulas (pesa ~1 MB): quien no use
+     matemáticas no paga nada. Si el CDN falla, se cae al comportamiento anterior
+     (el código  \( … \)  literal) en vez de romper la descarga.
+     ========================================================================== */
+  var MJ_SRC='https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js';
+  var WORD_PT=11;                          // cuerpo de letra del .doc
+  var MJ_EX_PX=WORD_PT*(96/72)*0.5;        // MathJax mide en "ex" ≈ medio cuerpo
+  var MJ_SCALE=4;                          // se rasteriza a 4x y se imprime al tamaño real: a 1x sale pixelado en papel
+  var mjLoad=null;                         // promesa única de carga
+  var mathPngCache={};                     // latex -> {url,w,h,va} (dura la sesión)
+
+  function ensureMathJax(){
+    if(mjLoad) return mjLoad;
+    mjLoad=new Promise(function(res,rej){
+      if(window.MathJax && window.MathJax.tex2svg){ res(window.MathJax); return; }
+      // La configuración TIENE que existir antes de cargar el script.
+      // · fontCache:'local' mete los trazos DENTRO de cada SVG. Por defecto MathJax
+      //   los guarda en un <svg> compartido de la página y la imagen exportada
+      //   saldría vacía.
+      // · typeset:false para que no ande recorriendo nuestra propia interfaz.
+      window.MathJax={ svg:{fontCache:'local'}, startup:{typeset:false} };
+      var s=document.createElement('script');
+      s.src=MJ_SRC; s.async=true;
+      s.onload=function(){
+        var st=window.MathJax && window.MathJax.startup;
+        if(st && st.promise) st.promise.then(function(){ res(window.MathJax); }, rej);
+        else res(window.MathJax);
+      };
+      s.onerror=function(){ rej(new Error('No se pudo cargar MathJax')); };
+      document.head.appendChild(s);
+    });
+    return mjLoad;
+  }
+
+  // Una fórmula -> PNG. Devuelve una promesa de {url, w, h, va} en PUNTOS (pt), que
+  // es la medida en la que piensa Word. `va` es el desplazamiento bajo la línea base
+  // (una fracción baja más que una x), para que la fórmula no quede flotando.
+  function latexToPng(MJ, latex){
+    return new Promise(function(res){
+      var svg;
+      try{
+        var node=MJ.tex2svg(latex, {display:false});
+        svg=node && node.querySelector('svg');
+      }catch(e){ svg=null; }
+      if(!svg){ res(null); return; }
+
+      // MathJax entrega las medidas en "ex"; se pasan a px con nuestro cuerpo de letra.
+      function exToPx(v){ var f=parseFloat(v); return isNaN(f)?0:f*MJ_EX_PX; }
+      var wpx=exToPx(svg.getAttribute('width')), hpx=exToPx(svg.getAttribute('height'));
+      if(!wpx || !hpx){ res(null); return; }
+      var vaPx=0, m=String(svg.getAttribute('style')||'').match(/vertical-align:\s*(-?[\d.]+)ex/);
+      if(m) vaPx=parseFloat(m[1])*MJ_EX_PX;
+
+      // El SVG lleva viewBox, así que fijar el tamaño en px escala todo el dibujo.
+      svg.setAttribute('width',  Math.round(wpx*MJ_SCALE)+'px');
+      svg.setAttribute('height', Math.round(hpx*MJ_SCALE)+'px');
+      svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
+      svg.removeAttribute('style');
+      var markup;
+      try{ markup=new XMLSerializer().serializeToString(svg); }
+      catch(e){ res(null); return; }
+
+      var im=new Image();
+      im.onerror=function(){ res(null); };
+      im.onload=function(){
+        var cv=document.createElement('canvas');
+        cv.width=Math.max(1,Math.round(wpx*MJ_SCALE));
+        cv.height=Math.max(1,Math.round(hpx*MJ_SCALE));
+        var c=cv.getContext('2d');
+        // Fondo blanco y no transparente: al imprimir, algunas versiones de Word
+        // pintan de negro el canal alfa de un PNG.
+        c.fillStyle='#ffffff'; c.fillRect(0,0,cv.width,cv.height);
+        c.drawImage(im,0,0,cv.width,cv.height);
+        res({url:cv.toDataURL('image/png'), w:wpx*0.75, h:hpx*0.75, va:vaPx*0.75});
+      };
+      im.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(markup);
+    });
+  }
+
+  // Todos los LaTeX distintos que hay en las preguntas (enunciados, opciones y el
+  // elemento izquierdo del emparejamiento: los tres sitios que admiten el botón ∑).
+  function collectLatex(qs){
+    var out=[], seen={};
+    function scan(html){
+      if(!html || String(html).indexOf('data-latex')===-1) return;
+      var d=document.createElement('div'); d.innerHTML=html;
+      Array.prototype.slice.call(d.querySelectorAll('span.fx[data-latex]')).forEach(function(sp){
+        var tex=sp.getAttribute('data-latex')||'';
+        if(tex && !seen[tex]){ seen[tex]=1; out.push(tex); }
+      });
+    }
+    qs.forEach(function(q){
+      scan(q.statement);
+      (q.opts||[]).forEach(function(o){ scan(o.text); });
+      (q.pairs||[]).forEach(function(p){ scan(p.q); });
+    });
+    return out;
+  }
+
+  function rasterizeMath(MJ, texs){
+    return Promise.all(texs.map(function(tex){
+      if(mathPngCache[tex]) return null;                       // ya estaba de una exportación anterior
+      return latexToPng(MJ, tex).then(function(r){ if(r) mathPngCache[tex]=r; });
+    })).then(function(){ return mathPngCache; });
+  }
+
+  // El equivalente de serializeMath() para el Word: en vez de  \( … \)  deja la
+  // imagen de la fórmula. Si alguna no se pudo dibujar, cae al código de siempre —
+  // el docente verá el LaTeX, pero no se pierde nada de lo que escribió.
+  function serializeMathWord(html, map){
+    if(!html || String(html).indexOf('data-latex')===-1) return html;
+    var d=document.createElement('div'); d.innerHTML=html;
+    Array.prototype.slice.call(d.querySelectorAll('span.fx[data-latex]')).forEach(function(sp){
+      var tex=sp.getAttribute('data-latex')||'', im=map[tex];
+      if(!im){ sp.parentNode.replaceChild(document.createTextNode(' \\('+tex+'\\) '), sp); return; }
+      var img=document.createElement('img');
+      img.src=im.url;
+      // Las dos medidas, en atributos (px) y en estilo (pt): distintas versiones de
+      // Word hacen caso a una o a la otra, y sin ninguna imprimiría la imagen a su
+      // tamaño real (4x) y se saldría de la hoja.
+      img.setAttribute('width',  String(Math.max(1,Math.round(im.w/0.75))));
+      img.setAttribute('height', String(Math.max(1,Math.round(im.h/0.75))));
+      img.setAttribute('alt', tex);
+      img.setAttribute('style','width:'+im.w.toFixed(1)+'pt;height:'+im.h.toFixed(1)+'pt;'+
+                               'vertical-align:'+im.va.toFixed(1)+'pt;');
+      sp.parentNode.replaceChild(img, sp);
+    });
+    return d.innerHTML;
+  }
+
+  /* ==========================================================================
+     WORD EXPORT · formato de examen impreso (Fase 6)
+     --------------------------------------------------------------------------
+     El archivo NO es un .docx real: es HTML con extensión .doc. Word lo abre y lo
+     maqueta, pero solo entiende una parte del CSS, y los márgenes y el pie de
+     página se piden con su CSS propietario (@page, mso-*). De ahí tres reglas:
+
+       · TABLAS y medidas en pt, nunca flex ni grid (Word los ignora).
+       · Las opciones van en <p> con sangría, NO en <ul>: Word le pone su propia
+         viñeta a las listas aunque se le diga list-style:none, y saldría
+         «• A) …».
+       · La numeración de páginas usa mso-field-code, que es lo que Word emite él
+         mismo. Aun así el docente puede apagarla, por si su versión no la entiende.
+
+     Hay que probarlo IMPRIMIENDO, no solo abriendo el archivo.
+     ========================================================================== */
+
+  function nlToBr(s){ return esc(s).replace(/\n/g,'<br>'); }
+  // Sin título propio, se arma uno con la asignatura ("Evaluación de Matemáticas"),
+  // que es como lo pidió Daniel en la plantilla de referencia. Sin asignatura tampoco,
+  // se cae al nombre del archivo (mejor que un título vacío).
+  function examTitleFor(catName){
+    var t=exam.title.trim(); if(t) return t;
+    var s=exam.subject.trim(); if(s) return 'Evaluación de '+s;
+    return catName.replace(/_/g,' ');
+  }
+  function crestUrl(){
+    if(!exam.crest) return '';
+    return 'data:image/'+(exam.crest.filename.slice(-3)==='png'?'png':'jpeg')+';base64,'+exam.crest.base64;
+  }
+  // Medidas del escudo en el papel: alto de referencia y ancho proporcional. Word
+  // necesita las DOS explícitas; con una sola, algunas versiones lo imprimen a su
+  // tamaño natural y un escudo de 400 px ocuparía media hoja.
+  // El alto (46 pt ≈ 1,6 cm) está igualado al del bloque de texto de al lado, para que
+  // escudo y nombre del colegio se lean como una sola unidad y el encabezado no crezca.
+  function crestBox(){
+    var h=46, ratio=1;
+    if(exam.crest && exam.crest.w && exam.crest.h) ratio=exam.crest.w/exam.crest.h;
+    var w=h*ratio;
+    if(w>110){ w=110; h=w/ratio; }        // tope para un membrete muy alargado
+    return {w:Math.round(w), h:Math.round(h)};
+  }
+
+  // Bloque superior: escudo + identificación (colegio, dirección, título, periodo) y la
+  // tabla de datos, que lleva las instrucciones DENTRO como última fila.
+  //
+  // La forma la fijó Daniel con capturas (2026-07-29, tarde). Cuatro decisiones que
+  // vienen de ahí y que no hay que "corregir" sin volver a mirarlas:
+  //
+  //  1. **El centrado va en el atributo `align`, no solo en CSS.** Word ignoró el
+  //     `text-align:center` que estaba puesto por clase (`td.ident{...}`) y los datos
+  //     del colegio salieron alineados a la izquierda. El atributo HTML `align="center"`
+  //     —en la celda Y en cada párrafo— sí lo respeta. No quitarlo "porque es CSS viejo".
+  //  2. El escudo va **a media distancia** entre el margen y el texto: centrado en su
+  //     propia columna (`align="center"`). Alineado a la izquierda quedaba pegado al
+  //     margen; alineado a la derecha quedaba pegado al título. Las dos se probaron.
+  //  3. Cada dato es UNA celda de una línea con la etiqueta en la misma línea
+  //     ("ESTUDIANTE: Carlos"), no una fila de etiquetas + una fila alta vacía. Así el
+  //     encabezado mide la mitad; con el formato viejo las preguntas no cabían en la
+  //     primera hoja.
+  //  4. Las instrucciones son la ÚLTIMA FILA de esa misma tabla (colspan), no un cuadro
+  //     aparte: pegadas, sin el hueco que dejaba el margen entre los dos bloques. Pero
+  //     DESPUÉS del encabezado va un párrafo separador — ver la nota de `p.headgap`.
+  function examHeaderHTML(catName){
+    var title=examTitleFor(catName);
+    if(!exam.on) return '<h1>'+esc(title)+'</h1><hr>';
+
+    // align="center" en cada párrafo: es lo único que Word respeta sin discutir.
+    function ctr(cls, txt){ return '<p class="'+cls+'" align="center">'+esc(txt)+'</p>'; }
+    var addr=exam.address.trim(), per=exam.period.trim();
+    var ident='';
+    if(exam.school.trim()) ident+=ctr('school', exam.school.trim().toUpperCase());
+    if(addr) ident+=ctr('exaddr', addr);
+    ident+=ctr('extitle', title);
+    if(per) ident+=ctr('exper', per);
+
+    var H='';
+    if(exam.crest){
+      var b=crestBox();
+      // Los tres anchos (32/36/32) están MEDIDOS, no elegidos a dedo, y cumplen dos
+      // condiciones a la vez:
+      //   · las columnas laterales son IGUALES → el texto queda centrado en la HOJA,
+      //     no solo dentro de su celda (si se rompe la igualdad, se descentra);
+      //   · con el escudo centrado en su columna queda a media distancia: ~1,7 cm del
+      //     margen y ~2,6 cm del título, sin pegarse a ninguno de los dos.
+      // Al tocarlos hay que volver a medir las dos cosas.
+      H+='<table class="exhead" cellspacing="0" cellpadding="0" width="100%"><tr>'+
+         '<td class="crest" width="32%" align="center"><img src="'+crestUrl()+'" width="'+Math.round(b.w/0.75)+'" height="'+Math.round(b.h/0.75)+'"'+
+         ' style="width:'+b.w+'pt;height:'+b.h+'pt;" alt="'+esc(exam.crest.alt||'Escudo de la institución')+'"></td>'+
+         '<td class="ident" width="36%" align="center">'+ident+'</td>'+
+         '<td width="32%">&nbsp;</td>'+
+         '</tr></table>';
+    } else {
+      H+='<div class="ident noimg" align="center">'+ident+'</div>';
+    }
+
+    // Un dato = una celda "ETIQUETA: valor". Los campos que la app ya conoce se
+    // pre-llenan; los que se escriben a mano quedan vacíos (la celda deja el espacio).
+    function cell(w, label, value, span){
+      return '<td'+(w?' width="'+w+'"':'')+(span?' colspan="'+span+'"':'')+'>'+
+             '<span class="lbl">'+esc(label)+':</span> '+(value?esc(value):'')+'</td>';
+    }
+    var rows='', cols=3;
+    if(exam.showStudent){
+      rows += '<tr>'+cell('50%','Estudiante','')+
+                     cell('25%','Grado / curso',exam.course.trim())+
+                     cell('25%','Fecha','')+'</tr>';
+    }
+    if(exam.teacher.trim() || exam.subject.trim() || exam.showScore){
+      rows += '<tr>'+cell('50%','Docente',exam.teacher.trim())+
+              (exam.showScore
+                ? cell('25%','Asignatura',exam.subject.trim())+cell('25%','Nota','')
+                : cell('50%','Asignatura',exam.subject.trim(),2))+'</tr>';
+    }
+    if(exam.instructions.trim()){
+      rows += '<tr><td colspan="'+cols+'" class="inst"><b>Instrucciones:</b> '+
+              nlToBr(exam.instructions.trim())+'</td></tr>';
+    }
+    if(rows) H+='<table class="exstu" cellspacing="0" cellpadding="0" width="100%">'+rows+'</table>';
+    // Párrafo separador entre el encabezado y la primera pregunta. NO basta con el
+    // margin-bottom de la tabla: Word se lo come cuando lo que sigue es otra tabla (el
+    // caso de 2 columnas), y las preguntas quedaban pegadas al cuadro de instrucciones.
+    // Un párrafo real con altura propia sí lo respeta siempre.
+    H+='<p class="headgap">&nbsp;</p>';
+    return H;
+  }
+
+  // El enunciado suele venir envuelto en un <p> (o un <div>) del editor. Para el papel
+  // conviene que el número de la pregunta y la primera línea queden juntos, así que se
+  // le quita ese primer bloque; los párrafos siguientes se conservan.
+  function unwrapFirstBlock(html){
+    var d=document.createElement('div'); d.innerHTML=html;
+    var f=d.firstElementChild;
+    if(f && d.childNodes[0]===f && (f.tagName==='P' || f.tagName==='DIV')){
+      var frag=document.createDocumentFragment();
+      while(f.firstChild) frag.appendChild(f.firstChild);
+      d.replaceChild(frag, f);
+    }
+    return d.innerHTML;
+  }
+
+  var LETRAS=['A','B','C','D','E','F','G','H','I','J'];
+  function imgTagB64(img, maxW, maxH){
+    var mime = img.filename.slice(-3)==='png' ? 'png' : 'jpeg';
+    return '<img src="data:image/'+mime+';base64,'+img.base64+'" style="max-width:'+maxW+
+           ';max-height:'+maxH+';" alt="'+esc(img.alt||'')+'">';
+  }
+
+  // Una pregunta completa (enunciado + imagen + opciones), lista para el papel.
+  // `num` es el número GLOBAL de la pregunta (1, 2, 3…): no cambia si la pregunta
+  // termina en la columna izquierda o la derecha del layout de 2 columnas.
+  function questionHTML(q, num, mathMap){
+    var out = '<div class="question">';
+
+    // Enunciado, con el número en la MISMA línea (así se lee un examen en papel).
+    // serializeMathWord() deja cada fórmula como imagen PNG (Fase 5).
+    var stmtWord = serializeMathWord(q.statement, mathMap);
+    // En papel no puede haber {a}: se imprime la PRIMERA variante, ya con números.
+    if(isCalc(q.type)) stmtWord = substCalc(stmtWord, calcVariantVals(q,0), q.calcDec);
+    // Los huecos del cloze se vuelven una raya para escribir a mano.
+    var stmtClean = q.type === 'cloze' ? stmtWord.replace(gapRe(), ' __________ ') : stmtWord;
+    out += '<div class="qstem"><span class="qnum">' + num + '.</span> ' + unwrapFirstBlock(stmtClean) + '</div>';
+
+    // Imagen, si la tiene (en base64, para que Word la lea sin internet)
+    if(q.image) out += '<p>' + imgTagB64(q.image, '100%', '9cm') + '</p>';
+
+    // Opciones de respuesta según el tipo (versión estudiante)
+    if(q.type === 'multichoice') {
+      q.opts.forEach(function(o, index) {
+        out += '<p class="opt">' + (LETRAS[index]||'•') + ') ' + serializeMathWord(o.text, mathMap) + '</p>';
+      });
+    } else if (q.type === 'truefalse') {
+      out += '<p class="opt">( &nbsp; ) Verdadero</p><p class="opt">( &nbsp; ) Falso</p>';
+    } else if (q.type === 'calculatedmulti') {
+      var wv = calcVariantVals(q,0);
+      (q.calcOpts||[]).forEach(function(o, index){
+        var t=o.text.trim();
+        var shown = t.indexOf('{=')>-1 ? substCalc(t, wv, q.calcDec)
+                  : (function(){ var r=evalFormula(t, wv); return r==null?t:fmtCalc(r, q.calcDec); })();
+        out += '<p class="opt">' + (LETRAS[index]||'•') + ') ' + esc(shown) + '</p>';
+      });
+    } else if (q.type === 'calculated') {
+      out += '<p class="ansline">Respuesta: _________________________________________</p>';
+    } else if (q.type === 'numerical') {
+      // Si la pregunta pide unidad, se le avisa al estudiante en el impreso.
+      var wUnits = q.numUnitsOn ? (q.numUnits||[]).filter(function(u){return u.name;}) : [];
+      var wNote = wUnits.length
+        ? ' <i>(incluye la unidad: ' + esc(wUnits.map(function(u){return u.name;}).join(' o ')) + ')</i>'
+        : '';
+      out += '<p class="ansline">Respuesta: _________________________________________' + wNote + '</p>';
+    } else if (q.type === 'shortanswer') {
+      out += '<p class="ansline">Respuesta: _________________________________________</p>';
+    } else if (q.type === 'cloze') {
+      // Los huecos ya están dentro del enunciado: no hace falta otra raya.
+    } else if (q.type === 'matching') {
+      // En papel no hay listas desplegables: el estudiante escribe la letra. Por eso
+      // hay que imprimir TAMBIÉN el banco de respuestas, o la pregunta no se puede
+      // contestar. Va en orden alfabético (no en el de las parejas, que regalaría la
+      // respuesta) y sale igual cada vez que se exporta.
+      var bank = q.pairs.map(function(p){ return p.a; })
+                        .filter(function(a,ix,arr){ return a && arr.indexOf(a)===ix; })
+                        .sort(function(a,b){ return String(a).localeCompare(String(b),'es'); });
+      out += '<table class="matchtbl" cellspacing="0" cellpadding="0">';
+      q.pairs.forEach(function(p, ix) {
+        var imgHtml = p.image ? imgTagB64(p.image, '80pt', '60pt') + ' ' : '';
+        out += '<tr><td>' + (ix+1) + '.</td><td class="mline">&nbsp;</td><td>' +
+               imgHtml + serializeMathWord(p.q, mathMap) + '</td></tr>';
+      });
+      out += '</table>';
+      out += '<p class="bank"><b>Escribe la letra que corresponde. Opciones:</b> ' +
+        bank.map(function(a,ix){ return (LETRAS[ix]||'•')+') '+esc(a); }).join(' &nbsp; ') + '</p>';
+    } else if (q.type === 'essay') {
+      out += '<p class="ansline">___________________________________________________________________<br><br>___________________________________________________________________<br><br>___________________________________________________________________</p>';
+    }
+
+    return out + '</div>';
+  }
+
+  /* Reparto en 2 columnas.
+     --------------------------------------------------------------------------
+     Por qué una TABLA estática y no columnas CSS de Word (mso-columns-count):
+     Word sí soporta columnas de verdad, pero solo dentro de un salto de sección
+     "continuo", cuya sintaxis en el HTML que exporta Word está pobremente
+     documentada y varía entre versiones — es fácil que salga como salto de PÁGINA
+     y meta una hoja en blanco. Una tabla se ve IGUAL en cualquier Word.
+
+     PERO: una tabla de UNA sola fila con todas las preguntas dentro NO sirve.
+     Word no parte una fila entre páginas, así que empujaba el bloque completo a
+     la hoja 2 y la primera quedaba con solo el encabezado (bug real, visto en una
+     captura de Daniel el 2026-07-29). La solución es emitir **una fila por
+     pareja** de preguntas: filas pequeñas que Word sí puede repartir entre hojas.
+
+     Consecuencia del diseño: la mitad de las preguntas va a la izquierda y la
+     mitad a la derecha, y la pregunta i queda al lado de la i+mitad (con 20
+     preguntas, la 1 al lado de la 11). Es el orden que pidió Daniel. */
+  function halfSplit(n){ return Math.ceil(n/2); }
+
+  // Arma TODO el bloque de preguntas: agrupa las lecturas compartidas (que SIEMPRE
+  // van a ancho completo, una sola vez) y, entre lectura y lectura, reparte las
+  // preguntas en 1 o 2 columnas según `exam.columns`.
+  function questionsHTML(mathMap){
+    var out='';
+    var cols = (exam.on && exam.columns==='2') ? 2 : 1;
+    var lastPassage=null, run=[];
+
+    function flushRun(){
+      if(!run.length) return;
+      if(cols===2 && run.length>1){
+        var k=halfSplit(run.length);
+        var left=run.slice(0,k), right=run.slice(k);
+        out += '<table class="qcols" cellspacing="0" cellpadding="0" width="100%">';
+        // Una fila por pareja: así Word puede cortar entre filas al cambiar de hoja.
+        for(var r=0; r<left.length; r++){
+          var L=left[r], R=right[r];
+          out += '<tr><td class="qcolL">'+questionHTML(L.q,L.num,mathMap)+'</td>'+
+                 '<td class="qcolR">'+(R? questionHTML(R.q,R.num,mathMap) : '&nbsp;')+'</td></tr>';
+        }
+        out += '</table>';
+      } else {
+        run.forEach(function(b){ out += questionHTML(b.q,b.num,mathMap); });
+      }
+      run=[];
+    }
+
+    questions.forEach(function(q,i){
+      // La lectura va FUERA de cualquier tabla de columnas: dentro, una columna
+      // angosta la haría casi ilegible. Por eso corta la tanda actual antes de imprimirla.
+      var pass = q.passageId ? passages.find(function(p){return p.id===q.passageId;}) : null;
+      if(pass && pass.id!==lastPassage){
+        flushRun();
+        out += '<div class="passage">' + pass.html + '</div>';
+      }
+      lastPassage = pass ? pass.id : null;
+      run.push({q:q, num:i+1});
+    });
+    flushRun();
+    return out;
+  }
+
   $('downloadWordBtn').onclick=function(){
     if(!questions.length){ toast('Agrega al menos una pregunta',true); return; }
+    var texs=collectLatex(questions);
+    if(!texs.length){ writeWordFile({}); return; }
+
+    // Con fórmulas hay que esperar a MathJax: el botón avisa para que no se pulse dos veces.
+    var btn=this, label=btn.textContent;
+    btn.disabled=true; btn.textContent='Dibujando fórmulas…';
+    function finish(map, warn){
+      btn.disabled=false; btn.textContent=label;
+      writeWordFile(map);
+      if(warn) setTimeout(function(){ toast(warn,true); }, 400);
+    }
+    ensureMathJax()
+      .then(function(MJ){ return rasterizeMath(MJ, texs); })
+      .then(function(map){
+        var fallidas=texs.filter(function(t){ return !map[t]; }).length;
+        finish(map, fallidas? fallidas+' fórmula(s) no se pudieron dibujar: en el Word saldrá su código.' : '');
+      })
+      .catch(function(){
+        finish({}, 'Sin conexión para dibujar las fórmulas: en el Word saldrá su código LaTeX.');
+      });
+  };
+
+  // `mathMap` es latex -> imagen PNG. Vacío = las fórmulas saldrán como \( … \).
+  function writeWordFile(mathMap){
     var catName = $('category').value.trim() || 'Evaluacion_Trendi';
+
+    var pageNums = exam.on && exam.pageNums;
 
     // 1. Estructura base del documento Word
     var wordContent = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">';
-    wordContent += '<head><meta charset="utf-8"><title>' + esc(catName) + '</title>';
+    wordContent += '<head><meta charset="utf-8"><title>' + esc(examTitleFor(catName)) + '</title>';
     wordContent += '<style>';
-    wordContent += 'body { font-family: "Arial", sans-serif; font-size: 11pt; color: #000; } ';
-    wordContent += 'h1 { text-align: center; font-size: 16pt; margin-bottom: 24px; } ';
-    wordContent += '.question { margin-bottom: 24px; page-break-inside: avoid; } ';
-    wordContent += '.passage { padding: 12px; border: 1px solid #ccc; margin-bottom: 12px; background: #f9f9f9; font-style: italic; }';
-    wordContent += '.opts { list-style-type: none; padding-left: 0; margin-top: 8px; } ';
-    wordContent += '.opts li { margin-bottom: 6px; } ';
-    wordContent += '</style></head><body>';
-    wordContent += '<h1>' + esc(catName.replace(/_/g, ' ')) + '</h1><hr><br>';
+    // Tamaño de hoja y márgenes. Es CSS propietario de Word: sin @page, el documento
+    // se abre con los márgenes que tenga configurados el equipo del docente.
+    // 21.59 x 27.94 cm = Carta, que es el papel que se usa en Colombia.
+    wordContent += '@page WordSection1 { size:21.59cm 27.94cm; margin:1.6cm 1.7cm 1.8cm 1.7cm;'
+                 + ' mso-page-orientation:portrait;' + (pageNums ? ' mso-footer:f1;' : '') + ' } ';
+    wordContent += 'div.WordSection1 { page:WordSection1; } ';
+    wordContent += 'body { font-family:"Arial",sans-serif; font-size:' + WORD_PT + 'pt; color:#000; } ';
+    wordContent += 'p { margin:0 0 6pt; } ';
+    wordContent += 'h1 { text-align:center; font-size:16pt; margin:0 0 14pt; } ';
+    // Encabezado del examen (Fase 6). El colegio/título van en serif (Georgia) para
+    // que se distingan del cuerpo, sin depender de una fuente web: en el .doc no hay
+    // garantía de internet al abrirlo, así que no se usa la fuente de la plantilla
+    // (Lora, de Google Fonts) — Georgia es lo más parecido que trae Windows de fábrica.
+    wordContent += 'table.exhead { table-layout:fixed; width:100%; margin-bottom:6pt; } ';
+    // padding:0 en TODAS las celdas del encabezado, y en la del escudo también.
+    // Con table-layout:fixed el relleno se SUMA al ancho de la columna en vez de caber
+    // dentro, así que un padding en la celda del escudo la ensancha, deja de medir lo
+    // mismo que la columna vacía de la derecha y el texto se descentra (medido: 16 px
+    // fuera del centro). La posición del escudo se controla solo con los anchos.
+    wordContent += 'table.exhead td { vertical-align:middle; padding:0; } ';
+    // El centrado va además en el atributo align= de cada celda y párrafo: Word ignora
+    // esta regla por clase. Se deja porque es la que vale en el navegador al probar.
+    wordContent += 'td.ident, div.ident.noimg, td.ident p, div.ident.noimg p { text-align:center; } ';
+    wordContent += 'p.school { font-family:Georgia,"Times New Roman",serif; font-size:13.5pt; font-weight:bold; margin:0 0 1pt; } ';
+    wordContent += 'p.exaddr { font-size:9pt; color:#555; font-style:italic; margin:0 0 1pt; } ';
+    wordContent += 'p.extitle { font-family:Georgia,"Times New Roman",serif; font-size:12.5pt; font-weight:bold; margin:0; text-transform:uppercase; letter-spacing:.03em; } ';
+    wordContent += 'p.exper { font-size:9pt; color:#555; text-transform:uppercase; letter-spacing:.04em; margin:1pt 0 0; } ';
+    wordContent += 'div.ident.noimg { margin-bottom:6pt; } ';
+    // Separador entre el encabezado y la primera pregunta (ver examHeaderHTML()).
+    wordContent += 'p.headgap { margin:0; font-size:8pt; line-height:8pt; } ';
+    // Tabla de datos: una celda por dato, de UNA línea, con la etiqueta en la misma
+    // línea. La altura la pone el contenido más un poco de aire para escribir a mano
+    // (height es un MÍNIMO en Word, no un máximo). Con el formato anterior —fila de
+    // etiquetas + fila alta vacía— el encabezado medía el doble y empujaba las
+    // preguntas a la hoja 2.
+    wordContent += 'table.exstu { border-collapse:collapse; table-layout:fixed; margin:0 0 10pt; } ';
+    wordContent += 'table.exstu td { border:0.75pt solid #000; padding:4pt 6pt; height:15pt; font-size:10pt; vertical-align:middle; } ';
+    wordContent += 'table.exstu span.lbl { font-size:8.5pt; font-weight:bold; color:#333; text-transform:uppercase; } ';
+    wordContent += 'table.exstu td.inst { font-size:9.5pt; height:auto; } ';
+    // Preguntas
+    wordContent += 'div.question { margin-bottom:13pt; page-break-inside:avoid; } ';
+    wordContent += 'div.qstem { margin-bottom:3pt; } ';
+    wordContent += 'span.qnum { font-weight:bold; } ';
+    // Las opciones son párrafos con sangría, NO <ul>: ver la nota de arriba.
+    wordContent += 'p.opt { margin:0 0 4pt 20pt; } ';
+    wordContent += 'p.ansline { margin:8pt 0 0; } ';
+    wordContent += 'p.bank { margin:5pt 0 0 20pt; font-size:10.5pt; } ';
+    wordContent += 'div.passage { padding:8pt 10pt; border:0.75pt solid #ccc; margin-bottom:8pt; background:#f9f9f9; font-style:italic; } ';
+    wordContent += 'table.matchtbl { border-collapse:collapse; margin:4pt 0 0 12pt; } ';
+    wordContent += 'table.matchtbl td { padding:2pt 6pt 2pt 0; vertical-align:middle; } ';
+    wordContent += 'table.matchtbl td.mline { border-bottom:0.75pt solid #000; width:34pt; } ';
+    // Preguntas en 2 columnas (Fase 6): una tabla estática con UNA FILA POR PAREJA —
+    // ver la nota junto a halfSplit() sobre por qué no son columnas CSS y por qué no
+    // puede ser una sola fila.
+    // table-layout:fixed para que el 50/50 se respete de verdad: sin esto, una tabla
+    // en modo "auto" reparte el ancho según el contenido (una columna con una imagen
+    // angosta se encoge), no según los porcentajes que se le piden.
+    wordContent += 'table.qcols { border-collapse:collapse; table-layout:fixed; width:100%; } ';
+    wordContent += 'table.qcols td { width:50%; vertical-align:top; padding:0 0 4pt; } ';
+    wordContent += 'table.qcols td.qcolL { padding-right:11pt; } ';
+    wordContent += 'table.qcols td.qcolR { padding-left:11pt; } ';
+    wordContent += 'p.MsoFooter { margin:0; font-size:9pt; color:#555; text-align:center; } ';
+    wordContent += '</style></head><body><div class="WordSection1">';
 
-    // 2. Iterar sobre cada pregunta guardada en la lista
-    questions.forEach(function(q, i) {
-      wordContent += '<div class="question">';
-      wordContent += '<p style="font-weight:bold; margin-bottom: 8px;">' + (i + 1) + '.</p>';
+    wordContent += examHeaderHTML(catName);
 
-      // A) Insertar lectura si la pregunta tiene una asociada
-      if(q.passageId) {
-        var pass = passages.find(function(p){return p.id===q.passageId;});
-        if(pass) wordContent += '<div class="passage">' + pass.html + '</div>';
-      }
+    // 2. Preguntas + lecturas, agrupadas en "tandas" para el layout de columnas
+    //    (ver questionHTML()/halfSplit() más abajo).
+    wordContent += questionsHTML(mathMap);
 
-      // B) Insertar el enunciado (limpiando sintaxis cloze si aplica)
-      // Word no renderiza LaTeX: sale el código literal entre \( \). Se corrige en la Fase 5.
-      var stmtWord = serializeMath(q.statement);
-      // En papel no puede haber {a}: se imprime la PRIMERA variante, ya con números.
-      if(isCalc(q.type)) stmtWord = substCalc(stmtWord, calcVariantVals(q,0), q.calcDec);
-      var stmtClean = q.type === 'cloze' ? stmtWord.replace(/\[\[([^\]]+)\]\]/g, ' ________ ') : stmtWord;
-      wordContent += '<div>' + stmtClean + '</div>';
+    wordContent += '</div>';   // fin de WordSection1
 
-      // C) Insertar imagen si la tiene (se inserta en base64 para que Word la lea sin internet)
-      if(q.image) {
-        var mime = q.image.filename.slice(-3) === 'png' ? 'png' : 'jpeg';
-        wordContent += '<p><img src="data:image/' + mime + ';base64,' + q.image.base64 + '" style="max-width:100%;" alt="' + esc(q.image.alt) + '"></p>';
-      }
-
-      // D) Dibujar las opciones de respuesta según el tipo (Versión estudiante)
-      if(q.type === 'multichoice') {
-        wordContent += '<ul class="opts">';
-        // Creamos un array con las letras para asignarlas automáticamente
-        var letras = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-        q.opts.forEach(function(o, index) { 
-            var letra = letras[index] || '•';
-            // Word no renderiza LaTeX: sale el código entre \( \) (se corrige en Fase 5).
-            wordContent += '<li>' + letra + ') ' + serializeMath(o.text) + '</li>';
-        });
-        wordContent += '</ul>';
-      } else if (q.type === 'truefalse') {
-        wordContent += '<ul class="opts"><li>( &nbsp; ) Verdadero</li><li>( &nbsp; ) Falso</li></ul>';
-      } else if (q.type === 'calculatedmulti') {
-        var wv = calcVariantVals(q,0);
-        wordContent += '<ul class="opts">';
-        var wLetras = ['A','B','C','D','E','F','G','H'];
-        (q.calcOpts||[]).forEach(function(o, index){
-          var t=o.text.trim();
-          var shown = t.indexOf('{=')>-1 ? substCalc(t, wv, q.calcDec)
-                    : (function(){ var r=evalFormula(t, wv); return r==null?t:fmtCalc(r, q.calcDec); })();
-          wordContent += '<li>' + (wLetras[index]||'•') + ') ' + esc(shown) + '</li>';
-        });
-        wordContent += '</ul>';
-      } else if (q.type === 'calculated') {
-        wordContent += '<p><br>Respuesta: _________________________________________</p>';
-      } else if (q.type === 'numerical') {
-        // Si la pregunta pide unidad, se le avisa al estudiante en el impreso.
-        var wUnits = q.numUnitsOn ? (q.numUnits||[]).filter(function(u){return u.name;}) : [];
-        var wNote = wUnits.length
-          ? ' <i>(incluye la unidad: ' + esc(wUnits.map(function(u){return u.name;}).join(' o ')) + ')</i>'
-          : '';
-        wordContent += '<p><br>Respuesta: _________________________________________' + wNote + '</p>';
-      } else if (q.type === 'shortanswer' || q.type === 'cloze') {
-        wordContent += '<p><br>Respuesta: _________________________________________</p>';
-      } else if (q.type === 'matching') {
-        wordContent += '<ul class="opts">';
-        q.pairs.forEach(function(p) {
-          var mime = p.image ? (p.image.filename.slice(-3)==='png'?'png':'jpeg') : '';
-          var imgHtml = p.image ? '<img src="data:image/' + mime + ';base64,' + p.image.base64 + '" style="max-width:80px;max-height:60px;vertical-align:middle;margin-right:8px;" alt="' + esc(p.image.alt||'') + '">' : '';
-          wordContent += '<li>' + imgHtml + serializeMath(p.q) + ' &nbsp; _______________________</li>';
-        });
-        wordContent += '</ul>';
-      } else if (q.type === 'essay') {
-        wordContent += '<p><br>___________________________________________________________________<br><br>___________________________________________________________________<br><br>___________________________________________________________________</p>';
-      }
-
-      wordContent += '</div>';
-    });
-
+    // Pie de página con la numeración. "mso-element:footer" es el marcado que Word
+    // emite él mismo al guardar como página web; los <span> con mso-field-code se
+    // convierten en los campos PAGE y NUMPAGES.
+    if(pageNums){
+      wordContent += '<div style="mso-element:footer" id="f1">'
+                   + '<p class="MsoFooter">Página <span style="mso-field-code:PAGE"></span>'
+                   + ' de <span style="mso-field-code:NUMPAGES"></span></p></div>';
+    }
     wordContent += '</body></html>';
 
     // 3. Generar y descargar el archivo
@@ -2172,10 +2719,116 @@
     a.click();
     document.body.removeChild(a);
     setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
-    
+
     toast('Evaluación descargada en Word');
+  }
+
+  /* ---------- Diálogo del formato de examen impreso (Fase 6) ----------
+     El escudo es otro *productor* del mismo objeto imagen que ya usa la app
+     ({filename, base64, alt} + w/h para el Word), así que pasa por readAsImage() y
+     por makeImage() igual que una imagen de pregunta. Se le añade una reducción
+     extra: en el papel mide ~58 pt, guardar 1400 px sería malgastar el almacenamiento.
+     Los avisos van en #examMsg (inline), nunca por toast: con un <dialog> abierto el
+     toast global queda tapado por el propio cuadro. */
+  var CREST_MAX=420;
+  function fitCrest(res, done){
+    var im=new Image();
+    im.onerror=function(){ done('El navegador no pudo leer esa imagen.'); };
+    im.onload=function(){
+      var w=im.naturalWidth, h=im.naturalHeight;
+      if(!w || !h){ done('El navegador no pudo leer esa imagen.'); return; }
+      var sc=Math.min(1, CREST_MAX/Math.max(w,h));
+      if(sc===1){ done(null,{dataUrl:res.dataUrl, ext:res.ext, w:w, h:h}); return; }
+      var cw=Math.max(1,Math.round(w*sc)), ch=Math.max(1,Math.round(h*sc));
+      var cv=document.createElement('canvas'); cv.width=cw; cv.height=ch;
+      var c=cv.getContext('2d');
+      if('imageSmoothingQuality' in c) c.imageSmoothingQuality='high';
+      // El JPEG no tiene transparencia: hay que aplanar sobre blanco (el PNG se respeta).
+      if(res.ext!=='png'){ c.fillStyle='#ffffff'; c.fillRect(0,0,cw,ch); }
+      c.drawImage(im,0,0,cw,ch);
+      // Se conserva la extensión de fitImage(): los bytes tienen que casar con ella.
+      var url = res.ext==='png' ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg',0.9);
+      done(null,{dataUrl:url, ext:res.ext, w:cw, h:ch});
+    };
+    im.src=res.dataUrl;
+  }
+  function examSay(msg){
+    var m=$('examMsg'); m.textContent=msg||'';
+    m.classList[msg?'add':'remove']('show');
+  }
+  function renderCrest(){
+    var area=$('examCrestArea');
+    if(!exam.crest){
+      area.innerHTML='<div class="img-choose"><button type="button" class="img-drop" id="crestDrop">Haz clic para subir el escudo del colegio</button></div>';
+      $('crestDrop').onclick=function(){ examSay(''); $('examCrestInput').click(); };
+      return;
+    }
+    area.innerHTML='';
+    var wrap=document.createElement('div'); wrap.className='img-prev';
+    var img=document.createElement('img'); img.src=crestUrl(); img.alt='Vista previa del escudo';
+    var meta=document.createElement('div'); meta.className='meta';
+    var note=document.createElement('div'); note.className='hint';
+    note.style.fontSize='12.5px'; note.style.marginBottom='6px';
+    note.textContent='Se imprimirá arriba a la izquierda, a unos 2 cm de alto.';
+    var ch=document.createElement('button'); ch.type='button'; ch.className='add-opt';
+    ch.textContent='Cambiar escudo';
+    ch.onclick=function(){ examSay(''); $('examCrestInput').click(); };
+    var rm=document.createElement('button'); rm.type='button'; rm.className='add-opt';
+    rm.style.color='var(--danger)'; rm.textContent='Quitar escudo';
+    rm.onclick=function(){ exam.crest=null; $('examCrestInput').value=''; examSay(''); renderCrest(); save(); };
+    meta.appendChild(note); meta.appendChild(ch); meta.appendChild(rm);
+    wrap.appendChild(img); wrap.appendChild(meta); area.appendChild(wrap);
+  }
+  $('examCrestInput').onchange=function(e){
+    var file=e.target.files[0]; if(!file) return;
+    var input=this;
+    readAsImage(file, function(err,res){
+      if(err){ examSay(err); input.value=''; return; }
+      fitCrest(res, function(err2,cr){
+        if(err2){ examSay(err2); input.value=''; return; }
+        exam.crest=makeImage('escudo', cr);
+        exam.crest.w=cr.w; exam.crest.h=cr.h;
+        delete exam.crest.dataUrl;   // se reconstruye con crestUrl(): no vale duplicarlo en localStorage
+        examSay(''); renderCrest(); save();
+      });
+    });
   };
-   
+  // Campos de texto: id del input -> clave de `exam`.
+  var EXAM_FIELDS={examSchool:'school', examAddress:'address', examTitle:'title', examSubject:'subject',
+                   examTeacher:'teacher', examPeriod:'period', examCourse:'course',
+                   examInst:'instructions'};
+  var EXAM_CHECKS={examOn:'on', examStudent:'showStudent', examScore:'showScore', examPageNums:'pageNums'};
+  function renderExamCols(){
+    var box=$('examColsGroup');
+    box.querySelectorAll('button').forEach(function(b){
+      b.setAttribute('aria-pressed', b.dataset.cols===exam.columns ? 'true':'false');
+    });
+  }
+  $('examColsGroup').addEventListener('click', function(e){
+    var b=e.target.closest('button'); if(!b) return;
+    exam.columns=b.dataset.cols; renderExamCols(); save();
+  });
+  function fillExamDlg(){
+    Object.keys(EXAM_FIELDS).forEach(function(id){ $(id).value = exam[EXAM_FIELDS[id]]||''; });
+    Object.keys(EXAM_CHECKS).forEach(function(id){ $(id).checked = !!exam[EXAM_CHECKS[id]]; });
+    $('examFields').style.display = exam.on ? 'block' : 'none';
+    renderCrest(); renderExamCols(); examSay('');
+  }
+  Object.keys(EXAM_FIELDS).forEach(function(id){
+    $(id).addEventListener('input', function(){ exam[EXAM_FIELDS[id]]=this.value; save(); });
+  });
+  Object.keys(EXAM_CHECKS).forEach(function(id){
+    $(id).addEventListener('change', function(){
+      exam[EXAM_CHECKS[id]]=this.checked;
+      if(id==='examOn') $('examFields').style.display = this.checked ? 'block' : 'none';
+      save();
+    });
+  });
+  $('examOpenBtn').onclick=function(){
+    fillExamDlg();
+    var d=$('examDlg'); if(d.showModal) d.showModal(); else d.setAttribute('open','');
+  };
+
   // ---------- Generador con IA ----------
   $('aiOpenBtn').onclick=function(){
     var d=$('aiDlg'); if(d.showModal) d.showModal(); else d.setAttribute('open','');
