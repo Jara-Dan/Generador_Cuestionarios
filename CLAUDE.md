@@ -1,8 +1,30 @@
-# Generador de Cuestionarios · Trendi
+# Creador de Evaluaciones · Praxis Pedagógica
 
 Herramienta web para que docentes creen preguntas y las exporten como **XML del banco
 de preguntas de Moodle**. También genera un prompt tipo ICFES para crear preguntas con
 IA, importa respuestas en formato Aiken, y exporta la evaluación a Word.
+
+## Rebranding a Praxis Pedagógica (2026-08-04)
+
+El proyecto se llamaba **Trendi** (empresa "Trendi · Trends & Innovation") y ahora es
+parte de **Praxis Pedagógica**, un proyecto más grande de Daniel. Se eliminó toda
+referencia a Trendi de la interfaz, el código y la documentación:
+
+- Título de la pestaña / SEO: «Creador de Evaluaciones — Exportación a Moodle».
+- El logo del header (`.praxis-logo`) ya se había reemplazado antes (commit
+  `4b602c4`); ahora también el favicon (`assets/favicon.svg`) usa el mismo ícono
+  geométrico azul/naranja en vez del cuadrado naranja con la "T".
+- **Claves de `localStorage` renombradas** (`trendi_quizgen_v1` →
+  `praxis_quizgen_v1`, `trendi_whatsnew_seen` → `praxis_whatsnew_seen`), con
+  **migración automática de un solo uso** (`migrateOldStorageKeys()` /
+  `migrateOldWhatsNewKey()`, junto a `KEY`/`WN_SEEN_KEY` en `js/main.js`): copian el
+  valor de la clave vieja a la nueva la primera vez que un docente con trabajo
+  guardado abre la versión nueva, sin borrar la clave vieja. Decisión de Daniel:
+  prioriza no perder el trabajo de docentes que ya usaban la herramienta por sobre
+  dejar el código 100 % libre del nombre viejo desde el día uno.
+- Nombres de archivo por defecto (respaldo JSON, XML, Word) y el asunto del correo
+  del buzón de sugerencias pasaron de "…trendi"/"…Trendi" a "…praxis"/"Praxis
+  Pedagógica".
 
 ## Invariante principal (no negociable)
 
@@ -683,7 +705,8 @@ arreglo**, con `version`, `date` y `items` (los `items` se insertan como HTML si
 
 El botón muestra un punto naranja (`#whatsNewDot` / clase `.new-dot`) cuando la última
 versión de `WHATS_NEW[0].version` no coincide con lo guardado en `localStorage` bajo
-`trendi_whatsnew_seen`. Se compara solo con la **primera** entrada del arreglo (la más
+`praxis_whatsnew_seen` (ver «Rebranding a Praxis Pedagógica» más abajo). Se compara solo
+con la **primera** entrada del arreglo (la más
 nueva), así que el orden de `WHATS_NEW` importa: siempre más nuevo primero. Al abrir el
 diálogo se marca como vista y el punto desaparece; comprobado que persiste entre
 recargas (`localStorage`) y que un docente nuevo (sin esa clave) sí ve el punto.
@@ -695,7 +718,7 @@ Botón «✉️ Contáctame» al lado de «Novedades» (el texto del botón e id
 no generar cambios innecesarios). Se decidió con Daniel entre las opciones
 que dejó pendientes el CLAUDE.md: **Web3Forms**, por ser la que mejor calza con el resto
 de la app — sin backend propio, sin problemas de CORS (a diferencia de un Apps Script),
-con antispam ya integrado, y con un `<dialog>` propio con el estilo de Trendi en vez de
+con antispam ya integrado, y con un `<dialog>` propio con el estilo de la app en vez de
 un widget embebido con marca ajena. Envía por correo, que era lo que Daniel pidió
 (evitar WhatsApp).
 

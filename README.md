@@ -1,4 +1,4 @@
-# Generador de Cuestionarios · Trendi
+# Creador de Evaluaciones · Praxis Pedagógica
 
 Herramienta web para que docentes creen preguntas de evaluación y las exporten
 como un archivo **XML compatible con Moodle**, sin instalar nada.
@@ -80,7 +80,7 @@ configuración de servidor.
 ## 📁 Estructura del proyecto
 
 ```
-generador-cuestionarios-trendi/
+creador-evaluaciones-praxis/
 ├── index.html          # Esqueleto HTML de la página (solo marcado).
 ├── css/
 │   └── style.css       # Todos los estilos. Empieza por :root con las variables de tema.
@@ -178,5 +178,5 @@ tipos se crean manualmente.
 
 ## 👏 Créditos
 
-Herramienta Desarrollada por Daniel Felipe Jara para la empresa **Trendi · Trends \& Innovation** para apoyo pedagógico y creación de bancos de preguntas para Moodle.
+Herramienta desarrollada por Daniel Felipe Jara para **Praxis Pedagógica** para apoyo pedagógico y creación de bancos de preguntas para Moodle.
 

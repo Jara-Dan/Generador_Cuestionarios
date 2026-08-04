@@ -1,5 +1,5 @@
 /* ============================================================================
-   main.js — Generador de Cuestionarios · Trendi
+   main.js — Creador de Evaluaciones · Praxis Pedagógica
    ----------------------------------------------------------------------------
    Toda la lógica de la herramienta vive en este archivo. Es JavaScript puro
    ("vanilla JS"), sin librerías ni dependencias externas.
@@ -95,8 +95,18 @@
   }
   // Clave única en localStorage. El sufijo "_v1" permite versionar el formato:
   // si algún día cambia la estructura guardada, se sube a "_v2" sin pisar datos viejos.
-  var KEY = 'trendi_quizgen_v1';
+  var KEY = 'praxis_quizgen_v1';
   var saveOk = true;
+
+  // Rebranding 2026-08 (la app se llamaba "Trendi"): migración de un solo uso para
+  // no perder el trabajo de docentes que ya guardaron bajo la clave vieja. No borra
+  // la clave vieja, solo copia si la nueva todavía no existe.
+  (function migrateOldStorageKeys(){
+    try{
+      var oldQuiz = localStorage.getItem('trendi_quizgen_v1');
+      if(oldQuiz && !localStorage.getItem(KEY)) localStorage.setItem(KEY, oldQuiz);
+    }catch(e){}
+  })();
 
   // IMPORTANTE: Moodle SOLO acepta un conjunto cerrado de "fracciones" (porcentajes
   // de crédito) por respuesta. Si enviamos un valor fuera de esa lista, Moodle
@@ -157,7 +167,13 @@
         'La vista previa se parece más a como se ve de verdad en Moodle.'
       ] }
   ];
-  var WN_SEEN_KEY = 'trendi_whatsnew_seen';
+  var WN_SEEN_KEY = 'praxis_whatsnew_seen';
+  (function migrateOldWhatsNewKey(){
+    try{
+      var oldSeen = localStorage.getItem('trendi_whatsnew_seen');
+      if(oldSeen && !localStorage.getItem(WN_SEEN_KEY)) localStorage.setItem(WN_SEEN_KEY, oldSeen);
+    }catch(e){}
+  })();
 
   // ---------- Buzón de sugerencias (Fase 8) ----------
   // Envía por Web3Forms: sin backend propio, la "access key" es pública por diseño
@@ -2293,8 +2309,8 @@
   $('exportBtn').onclick=function(){
     // version 3 = incluye `exam` (encabezado del examen impreso). Un respaldo v2 se
     // sigue restaurando sin problema: adoptExam() rellena lo que falte.
-    var data={version:3, app:'trendi_quizgen', category:$('category').value, questions:questions, passages:passages, exam:exam};
-    var name=($('category').value.trim().replace(/[^\w\-]+/g,'_')||'respaldo_trendi')+'.json';
+    var data={version:3, app:'praxis_quizgen', category:$('category').value, questions:questions, passages:passages, exam:exam};
+    var name=($('category').value.trim().replace(/[^\w\-]+/g,'_')||'respaldo_praxis')+'.json';
     download(name, JSON.stringify(data,null,2), 'application/json');
     toast('Respaldo JSON descargado');
   };
@@ -2581,7 +2597,7 @@
 
   $('downloadBtn').onclick=function(){
     if(!questions.length){ toast('Agrega al menos una pregunta',true); return; }
-    var cat=$('category').value.trim().replace(/[^\w\-]+/g,'_') || 'cuestionario_trendi';
+    var cat=$('category').value.trim().replace(/[^\w\-]+/g,'_') || 'cuestionario_praxis';
     download(cat+'.xml', buildXML(), 'application/xml');
     toast('XML descargado · súbelo a tu banco de preguntas');
   };
@@ -3036,7 +3052,7 @@
 
   // `mathMap` es latex -> imagen PNG. Vacío = las fórmulas saldrán como \( … \).
   function writeWordFile(mathMap){
-    var catName = $('category').value.trim() || 'Evaluacion_Trendi';
+    var catName = $('category').value.trim() || 'Evaluacion_Praxis';
 
     var pageNums = exam.on && exam.pageNums;
 
@@ -3302,7 +3318,7 @@
       headers:{'Content-Type':'application/json','Accept':'application/json'},
       body:JSON.stringify({
         access_key: WEB3FORMS_KEY,
-        subject: 'Mensaje desde Trendi — Generador de Cuestionarios',
+        subject: 'Mensaje desde Praxis Pedagógica — Creador de Evaluaciones',
         from_name: name || 'Docente (sin nombre)',
         name: name, email: email, message: body
       })

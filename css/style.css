@@ -1,5 +1,5 @@
 /* ============================================================================
-   style.css — Generador de Cuestionarios · Trendi
+   style.css — Creador de Evaluaciones · Praxis Pedagógica
    ----------------------------------------------------------------------------
    Hoja de estilos única de la aplicación. No depende de ningún framework
    (no hay Bootstrap, Tailwind, etc.): todo es CSS escrito a mano.
@@ -53,7 +53,7 @@
   .wordmark .dot{color:var(--accent);}
   .brand small{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.12em;display:block;margin-top:-3px;}
 
-  /* Logo Praxis Pedagógica: molinete + wordmark (reemplaza la marca "Trendi") */
+  /* Logo Praxis Pedagógica: molinete + wordmark */
   .praxis-logo{display:flex;align-items:center;gap:12px;}
   .praxis-logo__icon{flex:0 0 auto;transition:transform .5s;}
   .praxis-logo:hover .praxis-logo__icon{transform:rotate(90deg);}
