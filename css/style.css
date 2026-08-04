@@ -52,6 +52,14 @@
   .wordmark{font-weight:800;font-size:22px;letter-spacing:-.03em;}
   .wordmark .dot{color:var(--accent);}
   .brand small{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.12em;display:block;margin-top:-3px;}
+
+  /* Logo Praxis Pedagógica: molinete + wordmark (reemplaza la marca "Trendi") */
+  .praxis-logo{display:flex;align-items:center;gap:12px;}
+  .praxis-logo__icon{flex:0 0 auto;transition:transform .5s;}
+  .praxis-logo:hover .praxis-logo__icon{transform:rotate(90deg);}
+  .praxis-logo__wordmark{display:flex;flex-direction:column;justify-content:center;border-left:2px solid #B6E1E7;padding-left:12px;}
+  .praxis-logo__title{font-family:"Fraunces","Georgia",serif;font-size:20px;font-weight:700;text-transform:uppercase;letter-spacing:-.01em;line-height:1;color:#111439;}
+  .praxis-logo__subtitle{margin-top:2px;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.22em;line-height:1;color:#111439;}
   .head-title{font-size:14px;color:var(--muted);font-weight:500;}
   .savestate{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;}
   .savestate .dot-i{width:7px;height:7px;border-radius:50%;background:var(--correct);flex:0 0 auto;}
