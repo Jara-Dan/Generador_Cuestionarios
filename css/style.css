@@ -381,7 +381,13 @@
     .draw-grp .row .draw-sw{width:26px;min-width:26px;height:26px;}
     #drawBgSel{height:34px;font-size:13.5px;padding-top:4px;padding-bottom:4px;}
     .draw-actions .btn-primary{margin-right:0;width:100%;}
-    .draw-workspace{flex-direction:column;}
+    /* align-items:flex-start (línea 348) es para la fila de escritorio: en
+       columna, ese mismo valor deja que .draw-stage se encoja a su CONTENIDO
+       (el lienzo Fabric) en vez de estirarse al ancho del contenedor. Como
+       resizeDrawStage() calcula el zoom leyendo stage.clientWidth, eso creaba
+       un punto fijo que nunca bajaba de 1000px: el lienzo se salía de la
+       pantalla en vez de achicarse. stretch fuerza el ancho real disponible. */
+    .draw-workspace{flex-direction:column;align-items:stretch;}
     .draw-props{flex:1 1 auto;width:100%;}
   }
 
