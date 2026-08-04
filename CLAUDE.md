@@ -13,7 +13,7 @@ de Moodle la soporte de verdad — no basta con que se vea bien en la interfaz.
 ## Arquitectura
 
 - **Sin dependencias ni build.** HTML + CSS + JS puro. Toda la lógica vive en
-  `js/main.js` (~1000 líneas, un solo IIFE). El único recurso externo es Google Fonts (CSS).
+  `js/main.js` (~3300 líneas, un solo IIFE). El único recurso externo es Google Fonts (CSS).
 - **100 % en el navegador.** No hay servidor ni backend. El trabajo se guarda en
   `localStorage`.
 - Archivos: `index.html` (markup + textos de ayuda), `css/style.css`, `js/main.js`.
@@ -95,9 +95,7 @@ agrupador no se pierda la selección.
 | 7 | Botón **«Novedades»** con los cambios de cada versión | **Hecho** |
 | 8 | **Buzón de sugerencias** para que los docentes escriban a Daniel | **Hecho** |
 | 9 | **Generador con IA: LaTeX → fórmula visual** al importar | **Hecho** |
-
-Las fases 6, 7 y 8 las pidió Daniel el 2026-07-29; el detalle está más abajo. La fase 9
-se agregó el mismo día en una sesión posterior.
+| 10 | **Editor de dibujo → editor de diagramas didácticos** (motor Fabric.js, capas, conectores, plantillas, sellos) — reemplaza el motor de la Fase 3 | **En curso — Fase A hecha** (2026-07-30), B-G sin empezar. Ver fases A-G más abajo |
 
 Las fases 5 y 6 se hicieron juntas el 2026-07-29, como estaba previsto: las dos tocaban
 el mismo export a Word. Su documentación está en «Fórmulas en el Word» y «Formato de
@@ -234,6 +232,147 @@ formato ya es PNG/JPEG **y** cabe en medidas **y** en peso.
 Comprobado midiendo: PNG de 3,74 MB → JPEG de 0,53 MB a 1400×969; webp pequeño y
 dentro de medidas → reconvertido a `.jpg` (no pasa tal cual); y en el XML resultante
 la firma de bytes de cada `<file>` coincide con su extensión.
+
+### Editor de dibujo → editor de diagramas didácticos (Fase 10)
+
+Reescritura del lienzo de la Fase 3 (`drawShapes`/`redraw()`, canvas 2D puro) hacia un
+editor de objetos vectorial (selección, capas, conectores, plantillas). Aprobada por
+Daniel el 2026-07-30, documentada aquí **antes** de iniciar cualquier fase para que
+sobreviva a un `/clear` de la conversación.
+
+**Decisiones de arquitectura ya tomadas (no volver a discutir sin motivo nuevo):**
+
+- **Motor: Fabric.js v5.x, vendorizado en el propio repo** (p. ej. `/vendor/`), **no
+  CDN externo**. GitHub Pages ya sirve estático gratis; depender de un CDN de terceros
+  es justo el tipo de fragilidad que más le duele a este público (wifi de colegio poco
+  confiable). Carga **perezosa**, solo al abrir el diálogo de dibujo — mismo patrón que
+  `ensureMathJax()` —, con degradación si la carga falla.
+- **Sigue sin backend.** El estado del editor vive en memoria de sesión, igual que
+  `drawMemo` hoy — no se persiste en localStorage (mismo motivo que ya aplica al lienzo
+  actual: no inflar el almacenamiento, que ya va justo con las imágenes).
+- **La salida no cambia**: sigue siendo PNG vía `makeImage()`. `buildXML()`, el export a
+  Word, `editQ()` y el contrato `openDrawDlg(existing, onDone)` quedan intactos — esto
+  es un reemplazo del motor interno, no una función nueva aparte.
+- **Reemplaza, no coexiste**, con `drawShapes`/`redraw()`.
+- No toca la decisión pendiente de Mathpix/reconocimiento de escritura a mano de
+  «Decisión sobre el alcance de Fase 3» (arriba) — son problemas distintos: esto sigue
+  produciendo una imagen rasterizada, no LaTeX/MathML.
+
+**Fases:**
+
+| Fase | Alcance |
+|---|---|
+| A | Motor Fabric.js + paridad de herramientas actuales como objetos vivos (seleccionar/mover/rotar/reescalar/editar propiedades), multi-selección, agrupar, candado (botón + clic derecho), capas (frente/fondo/duplicar/papelera/bloquear), deshacer/rehacer, fondos actuales migrados tal cual |
+| B | Lienzo infinito: manita (pan), zoom con rueda + botones, recorte automático al exportar (bounding box del contenido real) |
+| C | Imagen de fondo (subir foto), auto-bloqueo, resaltador, anotación sobre fotos (flechas, círculos, cotas de medida "10 cm", texto) |
+| D | Conectores anclados a formas (recto/ortogonal/curvo) + cajas de texto con borde/relleno para mapas conceptuales |
+| E | Plantillas pedagógicas: Venn, línea de tiempo, ciclo, cuadro comparativo, mapa conceptual prearmado, rotulado con líneas guía |
+| F | Sellos didácticos por materia + insertar fórmula LaTeX como objeto del lienzo + regla/transportador |
+| G | «Pluma inteligente» (trazo a mano → forma geométrica limpia) — evaluar al final, no comprometida de entrada; ver nota abajo |
+
+Detalle y decisiones de cada fase:
+
+- **Fase A.** Cada figura/línea/texto queda seleccionable, movible, reescalable,
+  rotable, con propiedades editables después de creada — hoy no existe: una vez
+  dibujado un trazo es fijo. Multi-selección (marco de arrastre o Shift+clic) y agrupar
+  no estaban en el pedido original pero son indispensables en cuanto haya más de 2-3
+  objetos. El candado se activa desde botón 🔒 y también desde clic derecho. Los fondos
+  actuales (milimetrado, cartesiano, isométrico, recta numérica, blanco, colores) se
+  portan sin cambios visuales.
+  **Sobre "el borrador":** en un editor de objetos no hay borrador de píxeles —
+  seleccionar + papelera (o tecla Supr) cumple esa función. Un borrador que quite
+  *parte* de un trazo a mano alzada (como una goma sobre lápiz) es una herramienta
+  aparte y más cara de construir; queda en el backlog de la Fase G, no dado por hecho.
+
+  **Hecha (2026-07-30).** Fabric.js v5.3.0 vendorizado en `vendor/fabric.min.js`
+  (ojo: el build de cdnjs para "5.3.0" trae el string de versión interno mal
+  etiquetado como 5.1.0 — un bug conocido de esos builds —, así que el archivo
+  vendorizado viene de unpkg, verificado con `version:"5.3.0"` real dentro del
+  propio bundle). Carga perezosa con `ensureFabric()`, mismo patrón que
+  `ensureMathJax()`. El motor interno del lienzo (antes `drawShapes`/`redraw()`
+  con canvas 2D puro) fue reemplazado por completo; `openDrawDlg(existing,
+  onDone)` conserva su firma y `drawMemo` sigue viviendo solo en memoria de
+  sesión (ahora guarda el JSON de Fabric en vez de un arreglo de figuras).
+
+  Detalles que no eran obvios de antemano:
+  - **Los fondos (patrón) y el color de relleno siguen siendo independientes**,
+    igual que antes: el patrón (`drawBackground()` y sus funciones, sin tocar)
+    se rasteriza una vez a un canvas aparte y entra como `backgroundImage` no
+    seleccionable; el color va aparte en `backgroundColor`. Ninguno de los dos
+    viaja dentro del historial de deshacer/rehacer (se restaura aparte con
+    `applyBackground()`) para no arrastrar una copia del PNG de fondo en cada
+    paso — antes tampoco era "deshacible" cambiar el fondo, así que el
+    comportamiento no cambió, solo cómo se logra.
+  - **La herramienta Flecha arma un `fabric.Group` (línea + triángulo) marcado
+    con `dArrow:true`.** Sin esa marca, el botón "Desagrupar" la partiría en sus
+    dos piezas sueltas la primera vez que alguien seleccione una flecha y
+    pulse agrupar/desagrupar por error — `dArrow` (y `dLocked`, del candado) van
+    en `FABRIC_EXTRA_PROPS` porque Fabric no los serializa por defecto.
+  - **Deshacer/rehacer es una pila de snapshots** (`canvas.toJSON()` en cada
+    acción confirmada: crear figura, mover/rotar/reescalar, candado, agrupar,
+    duplicar, papelera, capas, color/trazo/opacidad del panel), no un historial
+    de comandos. Consecuencia visible: "Limpiar todo" ya no se deshace "trazo a
+    trazo" como en la Fase 3 — un solo Deshacer devuelve el lienzo completo de
+    una vez. Se avisa así en el mensaje inline del diálogo para no prometer de
+    más.
+  - **Exportar SIEMPRE a 1000×700 reales.** El lienzo se ve escalado con
+    `canvas.setZoom()` para caber en el diálogo (responsive), pero
+    `toDataURL()` exporta al tamaño de canvas ACTUAL — si se exportara sin más,
+    en una pantalla angosta (zoom<1) el PNG saldría más chico de lo debido. El
+    botón "Insertar" restaura zoom=1 y 1000×700 antes de `toDataURL()` y
+    devuelve el zoom visual después. Comprobado: el PNG insertado midió
+    1000×700 px sin importar que el lienzo se viera a 591×414 en pantalla.
+  - **La casilla "Texto por escribir" del formulario (Fase 3) desapareció.** Ya
+    no hace falta escribir el rótulo antes de tocar el lienzo: la herramienta
+    Texto ahora crea un `fabric.IText` que entra en edición al instante (texto
+    de verdad, editable después). Un texto que queda vacío al perder el foco se
+    borra solo (`text:editing:exited`), en vez de dejar una etiqueta fantasma.
+  - Verificado en el navegador (no solo leyendo el código): las 7 herramientas
+    crean objetos seleccionables/movibles/reescalables; selección múltiple con
+    arrastre y agrupar/desagrupar (protegido en flechas); candado desde el
+    botón y desde clic derecho; frente/fondo/duplicar/papelera; deshacer/rehacer
+    en una secuencia larga (crear → mover → candado → agrupar → duplicar →
+    borrar) recupera cada paso exacto en ambos sentidos; los 6 fondos y 7
+    colores de fondo se rasterizan con los píxeles exactos esperados; y
+    "Seguir editando el dibujo" retoma el JSON guardado con el fondo intacto.
+- **Fase B.** Obliga probablemente a agrandar el diálogo (hoy `max-width:860px`),
+  quizás a pantalla completa, porque ya no cabe cómodo con la barra ampliada.
+- **Fase C.** **Desviación consciente del pedido original**: el prompt pedía ajustar el
+  lienzo "exactamente" a los píxeles originales de la foto cargada. Eso choca con
+  `fitImage()` (máx. 1400px, ya documentado arriba: localStorage, memoria, la trampa
+  extensión-vs-bytes-reales). La foto de fondo pasa primero por `fitImage()`; el lienzo
+  se ajusta a esas medidas ya reducidas, no al original.
+  **Pendiente a confirmar con Daniel:** el pedido menciona SVG como formato de fondo
+  aceptado. Propuesta: rasterizarlo a PNG al cargarlo (como cualquier otra imagen), para
+  que el fondo siga siendo "una sola imagen bloqueada" y no un grupo de objetos
+  vectoriales sueltos.
+- **Fase D.** La más cara técnicamente: ninguna librería trae conectores anclados
+  gratis, hay que construirlos a mano (que la línea siga a la forma si esta se mueve).
+- **Fase E.** No estaba en el pedido original, se suma por valor: son solo
+  composiciones prearmadas de lo construido en A-D, no código nuevo complejo.
+- **Fase F.** Sellos organizados por materia reusando el mismo criterio que
+  `ESPECIFICACIONES_AREA` (Fase 9, ver abajo). Insertar fórmula LaTeX como objeto del
+  lienzo reutiliza `openFxDlg`/MathLive/`latexToPng()` (Fases 2 y 5) — tampoco estaba en
+  el pedido original, pero conecta piezas ya construidas del proyecto en vez de duplicar
+  trabajo.
+- **Fase G.** Ya hay botones directos de rectángulo/elipse, así que el valor de un
+  reconocedor de trazos es dudoso frente al costo de construirlo bien. Se decide al
+  final, con el mismo criterio que se usó para descartar Mathpix en su momento — no
+  asumir que se hace.
+
+**Interfaz — grupos de la barra de herramientas** (los 5 que pidió Daniel + 2 nuevos
+para que quepan las funciones que se sumaron):
+
+`[Selección y Navegación]` (cursor · mano/pan · zoom · deshacer/rehacer · alinear y
+distribuir) · `[Dibujo y Pinceles]` (lápiz · resaltador · color · grosor) ·
+`[Formas y Conectores]` (línea · flecha · rectángulo · elipse · conectores · caja de
+texto) · `[Plantillas]` *(nuevo)* · `[Sellos Didácticos]` · `[Fórmulas]` *(nuevo)* ·
+`[Fondos e Imagen]` (subir imagen · recortar · fondos dinámicos · color de fondo).
+
+Además, un **panel de propiedades contextual** a la derecha (aparece solo cuando hay un
+objeto seleccionado: color, grosor, relleno, opacidad, candado, duplicar, capas,
+papelera) — separado de la barra de "crear", como en Canva/Figma, para no saturar la
+barra superior con controles que solo aplican a veces.
 
 ### Preguntas calculadas (Fase 4)
 
@@ -609,6 +748,7 @@ más discreto) — jerarquía deliberada, no decoración.
 `.new-dot` (el punto de "hay algo nuevo") se dejó igual: el anillo blanco de 2px sobre
 un fondo ya anaranjado claro (`--accent-soft`) se sigue viendo, porque el punto en sí usa
 `--accent` sólido, bastante más saturado que el fondo del botón.
+
 ## El toast global no sirve dentro de un `<dialog>` abierto
 
 Hallazgo del 2026-07-29, verificado midiendo coordenadas: cualquier `<dialog>` abierto
@@ -623,15 +763,7 @@ cambia de texto y de color en vez de lanzar un toast). Si se agregan más accion
 dentro de `aiDlg`, `passageDlg`, `fxDlg` o `helpDlg` que necesiten confirmación visual,
 aplicar el mismo patrón.
 
-## Historial: qué pidió Daniel el 2026-07-29 (fases 7–9, todas cerradas)
-
-Anotado el 2026-07-29 para que no se pierda entre sesiones. Las fases 7 y 8 (documentadas
-más arriba, en «Botón «Novedades» (Fase 7)» y «Buzón de sugerencias (Fase 8)») se
-hicieron ese mismo día. La Fase 9, de abajo, quedó anotada aquí como pedido y se cerró
-más tarde ese mismo día — el resto de la sección ya incluye cómo quedó construida, lo
-que se verificó antes de construirla y las pruebas finales.
-
-### Fase 9 — Generador con IA: que reconozca LaTeX al importar
+### Fase 9 — Generador con IA: que reconozca LaTeX al importar (pedida y cerrada el 2026-07-29, junto con las fases 7 y 8)
 
 Pedido el 2026-07-29, en una sesión posterior a las fases 6/7/8. Hoy el flujo es:
 

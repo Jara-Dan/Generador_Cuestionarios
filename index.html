@@ -582,12 +582,14 @@
   </form>
 </dialog>
 
-<!-- Formula editor dialog (Fase 2) -->
+<!-- Formula editor dialog (Fase 2). No usa showModal(): ver la nota grande en
+     openFxDlg (js/main.js) sobre por qué, y por eso trae su propio backdrop. -->
+<div id="fxBackdrop" hidden></div>
 <dialog id="fxDlg" aria-labelledby="fxDlgTitle" style="border:none;border-radius:14px;padding:0;max-width:680px;width:94vw;box-shadow:0 20px 60px rgba(0,0,0,.3);">
   <form method="dialog" style="margin:0;">
     <div style="padding:20px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;">
       <h3 id="fxDlgTitle" style="font-size:17px;">∑ Insertar fórmula</h3>
-      <button class="btn btn-ghost btn-sm" value="close" type="submit">Cerrar</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="fxCloseBtn">Cerrar</button>
     </div>
     <div style="padding:20px 22px;">
 
@@ -643,8 +645,10 @@
       <div class="help tip" style="margin-top:0;">
         Elige un <b>fondo</b> (cuadrícula, plano cartesiano…), una <b>herramienta</b> y dibuja
         arrastrando sobre el lienzo. Puedes usar el ratón, el dedo o un lápiz digital.
-        Si te equivocas, usa <b>Deshacer</b>. Al insertarlo, el dibujo entra como una
-        imagen normal de la pregunta.
+        Con <b>Seleccionar</b> puedes tocar cualquier figura para moverla, rotarla,
+        reescalarla o cambiarle el color en el panel de la derecha. Si te equivocas,
+        usa <b>Deshacer</b>. Al insertarlo, el dibujo entra como una imagen normal de
+        la pregunta.
       </div>
 
       <div class="draw-bar">
@@ -673,17 +677,40 @@
             </select>
           </div>
         </div>
-        <div class="draw-grp" id="drawTextGrp" style="display:none;">
-          <span class="lbl"><label for="drawText">Texto por escribir</label></span>
-          <div class="row">
-            <input type="text" id="drawText" placeholder="Ej. A, 5 cm" maxlength="40">
-          </div>
+        <div class="draw-grp">
+          <span class="lbl" id="lbl-drawBgColor">Color de fondo</span>
+          <div class="row" id="drawBgColors" role="group" aria-labelledby="lbl-drawBgColor"></div>
         </div>
       </div>
 
-      <div class="draw-stage">
-        <canvas id="drawCanvas" width="1000" height="700"
-                role="img" aria-label="Lienzo de dibujo. Arrastra el puntero para dibujar."></canvas>
+      <div class="draw-workspace">
+        <div class="draw-stage">
+          <canvas id="drawCanvas" width="1000" height="700"
+                  role="img" aria-label="Lienzo de dibujo. Arrastra el puntero para dibujar o selecciona una figura para editarla."></canvas>
+        </div>
+        <div class="draw-props" id="drawProps" hidden>
+          <div class="draw-props-title">Figura seleccionada</div>
+          <div class="draw-grp">
+            <span class="lbl" id="lbl-dpColor">Color</span>
+            <div class="row" id="dpColors" role="group" aria-labelledby="lbl-dpColor"></div>
+          </div>
+          <div class="draw-grp">
+            <span class="lbl" id="lbl-dpWidth">Trazo</span>
+            <div class="row" id="dpWidths" role="group" aria-labelledby="lbl-dpWidth"></div>
+          </div>
+          <div class="draw-grp">
+            <span class="lbl"><label for="dpOpacity">Opacidad</label></span>
+            <input type="range" id="dpOpacity" min="20" max="100" step="5">
+          </div>
+          <div class="draw-grp draw-props-actions">
+            <button type="button" class="btn btn-ghost btn-sm" id="dpLock" title="Bloquear/desbloquear (clic derecho también funciona)">🔒 Bloquear</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="dpGroupBtn">Agrupar</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="dpFront" title="Traer al frente">⬆️ Frente</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="dpBack" title="Enviar al fondo">⬇️ Fondo</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="dpDup" title="Duplicar">⧉ Duplicar</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="dpDel" title="Eliminar">🗑️ Eliminar</button>
+          </div>
+        </div>
       </div>
 
       <div class="draw-msg" id="drawMsg" role="status"></div>

@@ -299,6 +299,7 @@
   var fxOnDone = null;     // qué hacer después de insertar (p. ej. guardar la opción)
   var fxSyncing = false;   // evita el bucle math-field <-> caja de LaTeX
   var fxReady = false;     // ¿se pudo montar el editor?
+  var fxKbListenerOn = false; // ¿ya se enganchó 'virtual-keyboard-toggle'? (una sola vez)
 
   function mathLive(){ return window.MathLive || null; }
   function fxField(){ return $('fxField'); }
@@ -366,9 +367,62 @@
     $('fxLatex').value=''; $('errFx').classList.remove('show');
 
     var dlg=$('fxDlg');
-    if(dlg.showModal) dlg.showModal(); else dlg.setAttribute('open','');
+    // fxDlg es el ÚNICO diálogo de la app que NO se abre con showModal(). El
+    // teclado virtual de MathLive vive fijo en <body>, calculado por la propia
+    // librería (tamaño y posición responsive — así es como lo diseñaron para
+    // tablet). Un <dialog> abierto con showModal() pinta en la "capa superior"
+    // del navegador (por encima de TODO, sin importar z-index) y además vuelve
+    // "inerte" —sin clics— todo lo que quede fuera del diálogo, incluido ese
+    // teclado. Se probó reubicar el teclado DENTRO del diálogo (mathVirtualKeyboard
+    // .container = dlg): funciona, pero su regla propia necesita un contenedor de
+    // alto fijo para no colapsar a 0px, y forzar un alto fijo (probado con 320px)
+    // lo deja "enterrado" al final del contenido, pidiendo scroll dentro del propio
+    // diálogo — en una tablet, con menos alto de pantalla, sería aún peor. Mejor
+    // dejar que el teclado siga acoplado al viewport como siempre, y quitarle a
+    // ESTE diálogo el modo modal para que deje de tapar y de anular los clics.
+    // .show() no trae backdrop, centrado ni cierre con Escape: se arma a mano
+    // (ver fxBackdrop en index.html y closeFxDlg más abajo).
+    $('fxBackdrop').hidden = false;
+    document.querySelector('header').inert = true;
+    document.querySelector('main').inert = true;
+    // El teclado tapa la parte baja del diálogo si nada le hace sitio (ver el
+    // comentario de --kb-height en style.css). window.mathVirtualKeyboard no
+    // existe todavía cuando este archivo se evalúa por primera vez —mathlive.min.js
+    // se carga con `defer` y main.js no, así que main.js corre primero—, por eso
+    // el listener se engancha AQUÍ (al abrir, con MathLive ya cargado) y no arriba
+    // del archivo, y solo una vez (fxKbListenerOn).
+    if(window.mathVirtualKeyboard && !fxKbListenerOn){
+      fxKbListenerOn = true;
+      window.mathVirtualKeyboard.addEventListener('virtual-keyboard-toggle', function(){
+        var h = window.mathVirtualKeyboard.boundingRect.height || 0;
+        var dlg = $('fxDlg');
+        // Puesta en el propio #fxDlg, no solo heredada desde <html>: un paso menos
+        // en la cadena de herencia para que el recálculo sea lo más directo posible.
+        dlg.style.setProperty('--kb-height', h+'px');
+        void dlg.offsetHeight; // fuerza el reflow: por si el navegador no lo agenda solo
+      });
+    }
+    if(dlg.show) dlg.show(); else dlg.setAttribute('open','');
     setTimeout(function(){ if(fxReady) fxField().focus(); else $('fxLatex').focus(); }, 30);
   }
+  // Deshace lo que openFxDlg preparó a mano. Se llama explícitamente desde CADA vía
+  // de cierre (botón "Cerrar", Escape, clic en el backdrop, insertar la fórmula) en
+  // vez de depender solo del evento nativo 'close' del <dialog> — con showModal()
+  // el navegador se encarga solo, pero aquí preferimos no dejarlo a la suerte.
+  function closeFxDlg(){
+    var dlg=$('fxDlg');
+    if(dlg.close) dlg.close(); else dlg.removeAttribute('open');
+    $('fxBackdrop').hidden = true;
+    document.querySelector('header').inert = false;
+    document.querySelector('main').inert = false;
+    dlg.style.setProperty('--kb-height','0px');
+  }
+  $('fxCloseBtn').addEventListener('click', closeFxDlg);
+  $('fxBackdrop').addEventListener('click', closeFxDlg);
+  // Como no es modal, Escape no lo cierra solo: showModal() sí lo hacía de fábrica.
+  $('fxDlg').addEventListener('keydown', function(e){
+    if(e.key==='Escape'){ closeFxDlg(); }
+  });
 
   // Reemplaza los bloques de fórmula por  \( latex \)  — el formato que Moodle
   // procesa con MathJax. Se usa el DOM (no expresiones regulares) para no romper
@@ -422,7 +476,7 @@
       return;
     }
     $('errFx').classList.remove('show');
-    var dlg=$('fxDlg'); if(dlg.close) dlg.close(); else dlg.removeAttribute('open');
+    closeFxDlg();
     var enOpcion = fxTarget && fxTarget!==stmt;
     insertFormulaIntoStmt(latex);
     toast(enOpcion ? 'Fórmula insertada en la opción' : 'Fórmula insertada en el enunciado');
@@ -1145,46 +1199,93 @@
     wrap.appendChild(img); wrap.appendChild(meta); area.appendChild(wrap);
   }
 
-  // ---------- Lienzo de dibujo (Fase 3) ----------
+  // ---------- Lienzo de dibujo ----------
   // El lienzo NO es un tipo de pregunta ni una salida nueva: es otro *productor*
   // del mismo objeto imagen que ya produce el <input type="file"> de arriba
   // ({filename, base64, dataUrl, alt}). Por eso NO hay que tocar buildXML(),
   // editQ(), resetForm() ni el export a Word: un dibujo viaja a Moodle
-  // exactamente igual que un JPG cargado a mano.
-  //
-  // Decisión técnica clave: los trazos NO se pintan directo sobre el canvas. Se
-  // guardan como objetos en `drawShapes` y se redibuja TODO en cada cambio
-  // (redraw()). Eso da gratis tres cosas que de otro modo son un dolor:
-  //   1. Deshacer/rehacer = mover elementos entre dos arreglos.
-  //   2. La vista elástica mientras se arrastra una línea o una elipse.
-  //   3. Cambiar el fondo sin perder lo ya dibujado.
+  // exactamente igual que un JPG cargado a mano. Esto siguió siendo cierto al
+  // reemplazar el motor por Fabric.js en la Fase 10-A (ver más abajo): cambió
+  // CÓMO se arma el PNG, no el contrato de salida.
+  // ==========================================================================
+  // LIENZO DE DIBUJO -> EDITOR DE DIAGRAMAS (Fase 10-A: motor Fabric.js)
+  // Ver CLAUDE.md, "Editor de dibujo -> editor de diagramas didácticos", para
+  // las decisiones ya tomadas antes de empezar esta fase: Fabric.js vendorizado
+  // en /vendor (sin CDN externo), carga perezosa solo al abrir el diálogo, sin
+  // backend, sin persistir en localStorage (drawMemo sigue viviendo solo en
+  // memoria de sesión) y la salida sigue siendo un PNG plano vía makeImage() —
+  // buildXML(), editQ() y el export a Word no se enteran de este cambio.
+  // ==========================================================================
   var DRAW_W=1000, DRAW_H=700, GRID=50;   // 1000/50 y 700/50 son enteros: el
                                           // centro (500,350) cae sobre la cuadrícula.
   var DRAW_TOOLS=[
+    {id:'select',  glyph:'↖',  cap:'Seleccionar — mover, rotar y reescalar'},
     {id:'pen',     glyph:'✏️', cap:'Lápiz — dibujo libre'},
     {id:'line',    glyph:'╱',  cap:'Línea recta'},
     {id:'arrow',   glyph:'→',  cap:'Flecha (vectores, señalar algo)'},
     {id:'rect',    glyph:'▭',  cap:'Rectángulo'},
     {id:'ellipse', glyph:'◯',  cap:'Elipse o círculo'},
-    {id:'text',    glyph:'A',  cap:'Texto — para rotular (A, B, 5 cm…)'}
+    {id:'text',    glyph:'A',  cap:'Texto — toca el lienzo y escribe (A, B, 5 cm…)'}
   ];
   var DRAW_COLORS=[
     {v:'#20251f', cap:'Negro'}, {v:'#cf4040', cap:'Rojo'}, {v:'#1d4ed8', cap:'Azul'},
     {v:'#2f8f5b', cap:'Verde'}, {v:'#ee7623', cap:'Naranja'}
   ];
   var DRAW_WIDTHS=[{w:2,cap:'Fino'},{w:4,cap:'Medio'},{w:8,cap:'Grueso'}];
+  // Color de RELLENO del lienzo, independiente del patrón de "Fondo" (cuadrícula,
+  // plano cartesiano…): ese sigue dibujando sus líneas encima, sobre este color en
+  // vez de sobre blanco fijo. Tonos suaves a propósito — con un color saturado las
+  // líneas de cuadrícula perderían contraste y el trazo del docente se vería peor.
+  var DRAW_BG_COLORS=[
+    {v:'#ffffff', cap:'Blanco'}, {v:'#fdf6ec', cap:'Crema'}, {v:'#f6ead8', cap:'Beige'},
+    {v:'#fdf3c4', cap:'Amarillo pastel'}, {v:'#dceedd', cap:'Verde pastel'},
+    {v:'#dce8f7', cap:'Azul pastel'}, {v:'#f8dfe6', cap:'Rosa pastel'}
+  ];
+  // Propiedades que Fabric NO incluye en su serialización por defecto (toJSON
+  // solo trae el set estándar: left/top/fill/stroke/...) pero que esta app
+  // necesita conservar al deshacer/rehacer y al retomar un dibujo: el candado
+  // y la marca "esto es una flecha armada, no un grupo cualquiera" (para que
+  // "Desagrupar" no la parta en línea+triángulo sueltos).
+  var FABRIC_EXTRA_PROPS=['lockMovementX','lockMovementY','lockScalingX','lockScalingY',
+    'lockRotation','hasControls','hoverCursor','dLocked','dArrow'];
 
-  var drawShapes=[], drawUndone=[], drawLive=null;
-  var drawTool='pen', drawColor=DRAW_COLORS[0].v, drawWidth=4, drawBg='blank';
-  var drawCv=null, drawCtx=null, drawBarBuilt=false, drawOnDone=null;
-  // Permite reabrir y seguir dibujando DENTRO de la misma sesión. Los trazos no
+  var fabLoad=null;
+  // Carga perezosa, mismo patrón que ensureMathJax(): solo se paga el peso de
+  // Fabric la primera vez que el docente abre el lienzo, nunca al cargar la página.
+  function ensureFabric(){
+    if(fabLoad) return fabLoad;
+    fabLoad=new Promise(function(res,rej){
+      if(window.fabric){ res(window.fabric); return; }
+      var s=document.createElement('script');
+      s.src='vendor/fabric.min.js';
+      s.onload=function(){ window.fabric ? res(window.fabric) : rej(new Error('el editor no se inicializó')); };
+      s.onerror=function(){ rej(new Error('sin conexión')); };
+      document.head.appendChild(s);
+    });
+    return fabLoad;
+  }
+
+  var fcv=null;   // instancia fabric.Canvas — se crea una sola vez, la primera vez que se abre el diálogo
+  var drawTool='select', drawColor=DRAW_COLORS[0].v, drawWidth=4, drawBg='blank';
+  var drawBgColor=DRAW_BG_COLORS[0].v;
+  var drawBarBuilt=false, drawOnDone=null;
+  var drawOrigin=null;   // punto inicial mientras se arrastra línea/flecha/rect/elipse
+  var drawLive=null;     // objeto Fabric temporal de la forma en curso (vista elástica)
+  // Historial por snapshots del canvas completo (Fabric no trae deshacer/rehacer
+  // de fábrica). drawRestoring evita que cargar un snapshot dispare sus propios
+  // eventos object:added/modified y se reencole a sí mismo.
+  var drawHistory=[], drawHistoryPos=-1, drawRestoring=false;
+  // Permite reabrir y seguir editando DENTRO de la misma sesión. Los trazos no
   // se guardan en localStorage a propósito (engordarían mucho el almacenamiento,
   // que ya va justo con las imágenes): al recargar la página el dibujo queda
-  // como una imagen plana, ya no editable.
-  var drawMemo={image:null, shapes:null, bg:'blank'};
-  function canKeepEditing(img){ return !!(img && drawMemo.image===img && drawMemo.shapes); }
+  // como una imagen plana, ya no editable. Antes guardaba un arreglo `shapes` a
+  // medida; ahora guarda el JSON que arma Fabric — el fondo NO viaja aquí dentro
+  // (ver drawSnapshot) porque bg/bgColor ya se conservan aparte.
+  var drawMemo={image:null, json:null, bg:'blank', bgColor:'#ffffff'};
+  function canKeepEditing(img){ return !!(img && drawMemo.image===img && drawMemo.json); }
 
-  // --- Fondos ---
+  // --- Fondos (sin cambios: siguen dibujando con canvas 2D "de toda la vida";
+  // ver applyBackground() más abajo para cómo entran ahora a Fabric) ---
   function drawBackground(c,kind){
     if(kind==='blank') return;
     c.save();
@@ -1257,95 +1358,121 @@
     c.textAlign='start';
   }
 
-  // --- Dibujo de las figuras ---
-  function drawShape(c,s){
-    c.save();
-    c.strokeStyle=s.color; c.fillStyle=s.color;
-    c.lineWidth=s.w||2; c.lineCap='round'; c.lineJoin='round';
-    if(s.tool==='pen'){
-      c.beginPath(); c.moveTo(s.pts[0][0],s.pts[0][1]);
-      for(var i=1;i<s.pts.length;i++) c.lineTo(s.pts[i][0],s.pts[i][1]);
-      c.stroke();
-    } else if(s.tool==='line'){
-      c.beginPath(); c.moveTo(s.x0,s.y0); c.lineTo(s.x1,s.y1); c.stroke();
-    } else if(s.tool==='arrow'){
-      c.beginPath(); c.moveTo(s.x0,s.y0); c.lineTo(s.x1,s.y1); c.stroke();
-      var dx=s.x1-s.x0, dy=s.y1-s.y0;
-      if(Math.sqrt(dx*dx+dy*dy)>1) arrowHead(c,s.x1,s.y1,Math.atan2(dy,dx),Math.max(12,(s.w||2)*3.4));
-    } else if(s.tool==='rect'){
-      c.beginPath();
-      c.rect(Math.min(s.x0,s.x1), Math.min(s.y0,s.y1), Math.abs(s.x1-s.x0), Math.abs(s.y1-s.y0));
-      c.stroke();
-    } else if(s.tool==='ellipse'){
-      c.beginPath();
-      c.ellipse((s.x0+s.x1)/2, (s.y0+s.y1)/2, Math.abs(s.x1-s.x0)/2, Math.abs(s.y1-s.y0)/2, 0, 0, Math.PI*2);
-      c.stroke();
-    } else if(s.tool==='text'){
-      c.font='700 '+Math.round(s.size)+'px "Hanken Grotesk",system-ui,sans-serif';
-      c.textBaseline='middle'; c.fillText(s.text, s.x, s.y);
-    }
-    c.restore();
-  }
-  function redraw(){
-    var c=drawCtx; if(!c) return;
-    c.setTransform(1,0,0,1,0,0);
-    c.fillStyle='#ffffff'; c.fillRect(0,0,DRAW_W,DRAW_H);
-    drawBackground(c,drawBg);
-    for(var i=0;i<drawShapes.length;i++) drawShape(c,drawShapes[i]);
-    if(drawLive) drawShape(c,drawLive);   // vista elástica de la figura en curso
+  // Pone el fondo en el canvas de Fabric: el patrón (líneas) va como imagen de
+  // fondo NO seleccionable/no interactiva, el color de relleno va aparte en
+  // backgroundColor. Se rasteriza a un canvas 2D aparte reutilizando las mismas
+  // funciones de siempre (nada de eso cambió), así que un fondo sigue pesando
+  // lo mismo que antes en el PNG final.
+  function applyBackground(){
+    if(!fcv) return;
+    fcv.backgroundColor = drawBgColor || '#ffffff';
+    if(drawBg==='blank'){ fcv.setBackgroundImage(null, fcv.renderAll.bind(fcv)); return; }
+    var off=document.createElement('canvas'); off.width=DRAW_W; off.height=DRAW_H;
+    drawBackground(off.getContext('2d'), drawBg);
+    fabric.Image.fromURL(off.toDataURL('image/png'), function(img){
+      img.set({left:0, top:0, selectable:false, evented:false});
+      fcv.setBackgroundImage(img, fcv.renderAll.bind(fcv));
+    });
   }
 
-  // --- Puntero ---
-  // El canvas tiene 1000x700 internos pero se muestra escalado por CSS, así que
-  // hay que convertir las coordenadas de pantalla a las del canvas. Si no, el
-  // trazo aparece desplazado del cursor: es el error clásico de todo lienzo.
-  function drawPt(e){
-    var r=drawCv.getBoundingClientRect();
-    return {
-      x:(e.clientX-r.left)*(DRAW_W/r.width),
-      y:(e.clientY-r.top )*(DRAW_H/r.height)
-    };
+  // --- Escala responsive ---
+  // Las coordenadas internas siguen siendo 1000x700 SIEMPRE (nada de infinito
+  // todavía — eso es la Fase B). Para que el lienzo se siga viendo a lo ancho
+  // del diálogo como antes (la vieja regla CSS width:100% de un <canvas> plano
+  // ya no aplica a los dos canvases que arma Fabric), se hace zoom visual con
+  // canvas.setZoom() + setWidth()/setHeight(): es el patrón estándar de Fabric
+  // para encajar un canvas de tamaño fijo en un contenedor que cambia, y de
+  // paso deja el viewportTransform ya listo para cuando la Fase B necesite
+  // pan/zoom real en vez de solo "ajustar a lo ancho".
+  function resizeDrawStage(){
+    if(!fcv) return;
+    var stage=document.querySelector('.draw-stage');
+    if(!stage) return;
+    var avail=Math.max(200, stage.clientWidth-4);
+    var scale=Math.min(1, avail/DRAW_W);
+    fcv.setZoom(scale);
+    fcv.setWidth(DRAW_W*scale); fcv.setHeight(DRAW_H*scale);
   }
-  function drawPush(s){ drawShapes.push(s); drawUndone.length=0; redraw(); drawSyncBtns(); }
-  function drawDown(e){
-    if(e.button!==undefined && e.button!==0) return;   // solo el botón principal
-    var p=drawPt(e);
-    if(drawTool==='text'){
-      var t=$('drawText').value.trim();
-      if(!t){
-        drawSay('Escribe primero el rótulo en la casilla «Texto por escribir» y luego toca el lienzo donde quieras ponerlo.', true);
-        $('drawText').focus(); return;
-      }
-      drawSay('');
-      drawPush({tool:'text', color:drawColor, size:14+drawWidth*3.5, x:p.x, y:p.y, text:t});
-      return;
-    }
-    drawLive = (drawTool==='pen')
-      ? {tool:'pen', color:drawColor, w:drawWidth, pts:[[p.x,p.y]]}
-      : {tool:drawTool, color:drawColor, w:drawWidth, x0:p.x, y0:p.y, x1:p.x, y1:p.y};
-    // Con captura, arrastrar fuera del canvas sigue funcionando.
-    if(drawCv.setPointerCapture && e.pointerId!==undefined){
-      try{ drawCv.setPointerCapture(e.pointerId); }catch(err){}
-    }
-    e.preventDefault();
+  window.addEventListener('resize', function(){
+    var d=$('drawDlg'); if(d && d.open) resizeDrawStage();
+  });
+
+  // --- Historial (deshacer/rehacer) ---
+  // El fondo NO viaja en el snapshot (se restaura aparte con applyBackground()):
+  // así cada paso del historial no arrastra una copia entera del PNG de fondo.
+  function drawSnapshot(){
+    var j=fcv.toJSON(FABRIC_EXTRA_PROPS);
+    delete j.background; delete j.backgroundImage;
+    return JSON.stringify(j);
   }
-  function drawMove(e){
-    if(!drawLive) return;
-    var p=drawPt(e);
-    if(drawLive.tool==='pen') drawLive.pts.push([p.x,p.y]);
-    else { drawLive.x1=p.x; drawLive.y1=p.y; }
-    redraw(); e.preventDefault();
+  function pushHistory(){
+    if(drawRestoring || !fcv) return;
+    drawHistory=drawHistory.slice(0, drawHistoryPos+1);
+    drawHistory.push(drawSnapshot());
+    drawHistoryPos=drawHistory.length-1;
+    drawSyncBtns();
   }
-  function drawEnd(){
-    if(!drawLive) return;
-    var s=drawLive; drawLive=null;
-    if(s.tool==='pen'){
-      // Un clic suelto con el lápiz debe dejar un punto, no desaparecer.
-      if(s.pts.length===1) s.pts.push([s.pts[0][0]+0.01, s.pts[0][1]+0.01]);
-    } else if(Math.abs(s.x1-s.x0)<3 && Math.abs(s.y1-s.y0)<3){
-      redraw(); return;    // un clic sin arrastrar: no se crea figura vacía
+  function loadHistory(pos){
+    drawRestoring=true;
+    fcv.loadFromJSON(drawHistory[pos], function(){
+      applyBackground();
+      fcv.discardActiveObject(); fcv.renderAll();
+      drawRestoring=false; drawHistoryPos=pos;
+      drawSyncBtns(); drawSyncSelPanel();
+    });
+  }
+  function drawUndo(){ if(drawHistoryPos>0) loadHistory(drawHistoryPos-1); }
+  function drawRedo(){ if(drawHistoryPos<drawHistory.length-1) loadHistory(drawHistoryPos+1); }
+
+  // --- Candado ---
+  function setLocked(objs, val){
+    objs.forEach(function(o){
+      o.set({dLocked:val, lockMovementX:val, lockMovementY:val, lockScalingX:val,
+        lockScalingY:val, lockRotation:val, hasControls:!val, hoverCursor:val?'default':'move'});
+    });
+    fcv.requestRenderAll(); drawSyncSelPanel(); pushHistory();
+  }
+
+  // --- Agrupar / desagrupar ---
+  // dArrow marca los grupos línea+triángulo que arma la herramienta Flecha:
+  // esos NO se desagrupan nunca (partirían la flecha en sus dos piezas sueltas).
+  function groupSelection(){
+    var obj=fcv.getActiveObject();
+    if(!obj || obj.type!=='activeSelection') return;
+    var grp=obj.toGroup();
+    fcv.setActiveObject(grp); fcv.requestRenderAll();
+    drawSyncSelPanel(); pushHistory();
+  }
+  function ungroupSelection(){
+    var obj=fcv.getActiveObject();
+    if(!obj || obj.type!=='group' || obj.dArrow) return;
+    obj.toActiveSelection();
+    fcv.requestRenderAll();
+    drawSyncSelPanel(); pushHistory();
+  }
+
+  // --- Herramientas ---
+  // 'select': modo normal de Fabric (clic para seleccionar/mover/rotar/reescalar).
+  // 'pen': dibujo libre nativo de Fabric (isDrawingMode). El resto ('line',
+  // 'arrow','rect','ellipse','text') se arman a mano con mouse:down/move/up
+  // (ver wireCanvasEvents) porque Fabric no trae "herramientas de forma" de
+  // fábrica, solo el lienzo de selección/edición.
+  function setDrawTool(id){
+    drawTool=id;
+    if(!fcv) return;
+    fcv.isDrawingMode=(id==='pen');
+    if(id==='pen'){
+      fcv.freeDrawingBrush.color=drawColor;
+      fcv.freeDrawingBrush.width=drawWidth;
     }
-    drawPush(s);
+    fcv.selection=(id==='select');
+    // Con una herramienta de forma activa, el lienzo no debe "encontrar" (ni por
+    // tanto seleccionar) objetos existentes -- si no, arrastrar para dibujar un
+    // rectángulo encima de una figura previa la movería en cambio.
+    fcv.skipTargetFind=(id!=='select');
+    if(id!=='select') fcv.discardActiveObject();
+    fcv.defaultCursor=fcv.hoverCursor=(id==='select')?'default':'crosshair';
+    fcv.requestRenderAll();
   }
 
   // --- Interfaz del diálogo ---
@@ -1355,14 +1482,51 @@
     m.className='draw-msg'+(msg?' show':'')+(err?' err':'');
   }
   function drawSyncBtns(){
-    $('drawUndoBtn').disabled = !drawShapes.length;
-    $('drawRedoBtn').disabled = !drawUndone.length;
-    $('drawClearBtn').disabled = !drawShapes.length;
+    $('drawUndoBtn').disabled = drawHistoryPos<=0;
+    $('drawRedoBtn').disabled = drawHistoryPos>=drawHistory.length-1;
+    $('drawClearBtn').disabled = !fcv || !fcv.getObjects().length;
   }
   function drawPressGroup(box, activeBtn){
     var bs=box.querySelectorAll('button');
     for(var i=0;i<bs.length;i++) bs[i].setAttribute('aria-pressed', bs[i]===activeBtn ? 'true':'false');
   }
+  // Busca en un grupo de swatches el botón cuyo dataset[attr] coincide con value
+  // (para reflejar en el panel contextual la propiedad real del objeto seleccionado).
+  function syncSwatch(box, attr, value){
+    var bs=box.querySelectorAll('button'), match=null;
+    for(var i=0;i<bs.length;i++){ if(bs[i].dataset[attr]===String(value)){ match=bs[i]; break; } }
+    drawPressGroup(box, match);
+  }
+  // Panel contextual (candado/agrupar/capas/duplicar/papelera/color/trazo/opacidad):
+  // solo se muestra con algo seleccionado, como en Canva/Figma -- así no compite
+  // por espacio con la barra de "crear" de arriba cuando no hace falta.
+  function drawSyncSelPanel(){
+    var panel=$('drawProps');
+    if(!fcv){ panel.hidden=true; return; }
+    var objs=fcv.getActiveObjects();
+    if(!objs.length){ panel.hidden=true; return; }
+    panel.hidden=false;
+    var locked=objs.some(function(o){ return o.dLocked; });
+    $('dpLock').textContent = locked ? '🔓 Desbloquear' : '🔒 Bloquear';
+    $('dpLock').setAttribute('aria-pressed', locked?'true':'false');
+
+    var obj=fcv.getActiveObject();
+    var isMulti = obj.type==='activeSelection';
+    var isGroup = obj.type==='group' && !obj.dArrow;
+    if(isMulti){
+      $('dpGroupBtn').hidden=false; $('dpGroupBtn').textContent='Agrupar'; $('dpGroupBtn').onclick=groupSelection;
+    } else if(isGroup){
+      $('dpGroupBtn').hidden=false; $('dpGroupBtn').textContent='Desagrupar'; $('dpGroupBtn').onclick=ungroupSelection;
+    } else {
+      $('dpGroupBtn').hidden=true;
+    }
+    if(!isMulti && !isGroup){
+      syncSwatch($('dpColors'),'v', obj.type==='i-text' ? obj.fill : obj.stroke);
+      syncSwatch($('dpWidths'),'w', obj.type==='i-text' ? '' : (obj.strokeWidth||2));
+      $('dpOpacity').value=Math.round((obj.opacity==null?1:obj.opacity)*100);
+    }
+  }
+
   function buildDrawBar(){
     if(drawBarBuilt) return; drawBarBuilt=true;
     var tools=$('drawTools');
@@ -1370,11 +1534,7 @@
       var b=document.createElement('button'); b.type='button';
       b.textContent=t.glyph; b.title=t.cap; b.setAttribute('aria-label',t.cap);
       b.setAttribute('aria-pressed', t.id===drawTool ? 'true':'false');
-      b.onclick=function(){
-        drawTool=t.id; drawPressGroup(tools,b);
-        $('drawTextGrp').style.display = (t.id==='text') ? '' : 'none';
-        if(t.id==='text') $('drawText').focus();
-      };
+      b.onclick=function(){ setDrawTool(t.id); drawPressGroup(tools,b); };
       tools.appendChild(b);
     });
     var cols=$('drawColors');
@@ -1382,8 +1542,20 @@
       var b=document.createElement('button'); b.type='button'; b.className='draw-sw';
       b.style.background=c.v; b.title=c.cap; b.setAttribute('aria-label','Color '+c.cap);
       b.setAttribute('aria-pressed', c.v===drawColor ? 'true':'false');
-      b.onclick=function(){ drawColor=c.v; drawPressGroup(cols,b); };
+      b.onclick=function(){
+        drawColor=c.v; drawPressGroup(cols,b);
+        if(fcv && fcv.isDrawingMode) fcv.freeDrawingBrush.color=c.v;
+      };
       cols.appendChild(b);
+    });
+    var bgc=$('drawBgColors');
+    DRAW_BG_COLORS.forEach(function(c){
+      var b=document.createElement('button'); b.type='button'; b.className='draw-sw';
+      b.style.background=c.v; b.title=c.cap; b.setAttribute('aria-label','Color de fondo '+c.cap);
+      b.dataset.bg=c.v;   // valor hex de respaldo: b.style.background se relee como rgb(), no sirve para comparar
+      b.setAttribute('aria-pressed', c.v===drawBgColor ? 'true':'false');
+      b.onclick=function(){ drawBgColor=c.v; drawPressGroup(bgc,b); applyBackground(); };
+      bgc.appendChild(b);
     });
     var ws=$('drawWidths');
     DRAW_WIDTHS.forEach(function(x){
@@ -1395,82 +1567,267 @@
       var bar=document.createElement('span');
       bar.style.cssText='display:block;width:17px;height:'+Math.max(2,x.w/1.6)+'px;border-radius:4px;background:currentColor;';
       b.appendChild(bar);
-      b.onclick=function(){ drawWidth=x.w; drawPressGroup(ws,b); };
+      b.onclick=function(){
+        drawWidth=x.w; drawPressGroup(ws,b);
+        if(fcv && fcv.isDrawingMode) fcv.freeDrawingBrush.width=x.w;
+      };
       ws.appendChild(b);
     });
+    $('drawBgSel').onchange=function(){ drawBg=this.value; applyBackground(); };
 
-    drawCv=$('drawCanvas'); drawCtx=drawCv.getContext('2d');
-    drawCv.addEventListener('pointerdown', drawDown);
-    drawCv.addEventListener('pointermove', drawMove);
-    drawCv.addEventListener('pointerup',   drawEnd);
-    drawCv.addEventListener('pointercancel', drawEnd);
-    $('drawBgSel').onchange=function(){ drawBg=this.value; redraw(); };
-    // El diálogo es un <form method="dialog">: un Enter en la casilla de texto
-    // lo enviaría y cerraría el lienzo con todo lo dibujado sin insertar.
-    $('drawText').addEventListener('keydown', function(e){
-      if(e.key==='Enter'){ e.preventDefault(); }
+    // --- Panel contextual: mismos swatches de color/trazo, pero aplicados al
+    // objeto seleccionado en vez de fijar el valor por defecto de la próxima figura ---
+    var dpc=$('dpColors');
+    DRAW_COLORS.forEach(function(c){
+      var b=document.createElement('button'); b.type='button'; b.className='draw-sw';
+      b.style.background=c.v; b.title=c.cap; b.setAttribute('aria-label','Color '+c.cap);
+      b.dataset.v=c.v;
+      b.onclick=function(){
+        var objs=fcv.getActiveObjects(); if(!objs.length) return;
+        objs.forEach(function(o){ o.set(o.type==='i-text' ? 'fill' : 'stroke', c.v); });
+        fcv.requestRenderAll(); drawPressGroup(dpc,b); pushHistory();
+      };
+      dpc.appendChild(b);
+    });
+    var dpw=$('dpWidths');
+    DRAW_WIDTHS.forEach(function(x){
+      var b=document.createElement('button'); b.type='button';
+      b.title=x.cap+' — o el tamaño del texto, si lo seleccionado es un rótulo';
+      b.setAttribute('aria-label','Trazo '+x.cap); b.dataset.w=x.w;
+      var bar=document.createElement('span');
+      bar.style.cssText='display:block;width:17px;height:'+Math.max(2,x.w/1.6)+'px;border-radius:4px;background:currentColor;';
+      b.appendChild(bar);
+      b.onclick=function(){
+        var objs=fcv.getActiveObjects(); if(!objs.length) return;
+        objs.forEach(function(o){
+          if(o.type==='i-text') o.set('fontSize', 14+x.w*3.5);
+          else o.set('strokeWidth', x.w);
+        });
+        fcv.requestRenderAll(); drawPressGroup(dpw,b); pushHistory();
+      };
+      dpw.appendChild(b);
+    });
+    $('dpOpacity').addEventListener('input', function(){
+      var objs=fcv.getActiveObjects(); if(!objs.length) return;
+      var v=this.value/100;
+      objs.forEach(function(o){ o.set('opacity', v); });
+      fcv.requestRenderAll();
+    });
+    $('dpOpacity').addEventListener('change', function(){ pushHistory(); });
+    $('dpLock').onclick=function(){
+      var objs=fcv.getActiveObjects(); if(!objs.length) return;
+      setLocked(objs, objs.some(function(o){ return !o.dLocked; }));
+    };
+    $('dpFront').onclick=function(){
+      var objs=fcv.getActiveObjects(); if(!objs.length) return;
+      objs.forEach(function(o){ fcv.bringToFront(o); });
+      fcv.requestRenderAll(); pushHistory();
+    };
+    $('dpBack').onclick=function(){
+      var objs=fcv.getActiveObjects(); if(!objs.length) return;
+      objs.forEach(function(o){ fcv.sendToBack(o); });
+      fcv.requestRenderAll(); pushHistory();
+    };
+    $('dpDup').onclick=function(){
+      var objs=fcv.getActiveObjects(); if(!objs.length) return;
+      fcv.discardActiveObject();
+      var clones=[];
+      objs.forEach(function(o){
+        o.clone(function(c2){
+          c2.set({left:o.left+16, top:o.top+16});
+          fcv.add(c2); clones.push(c2);
+          if(clones.length===objs.length){
+            var sel=clones.length>1 ? new fabric.ActiveSelection(clones,{canvas:fcv}) : clones[0];
+            fcv.setActiveObject(sel); fcv.requestRenderAll(); pushHistory();
+          }
+        }, FABRIC_EXTRA_PROPS);
+      });
+    };
+    $('dpDel').onclick=function(){
+      var objs=fcv.getActiveObjects(); if(!objs.length) return;
+      fcv.discardActiveObject();
+      objs.forEach(function(o){ fcv.remove(o); });
+      fcv.requestRenderAll(); drawSyncSelPanel(); pushHistory();
+    };
+  }
+
+  // Arma los manejadores del canvas de Fabric. Se llama una sola vez, justo
+  // después de crear la instancia (ver openDrawDlg).
+  function wireCanvasEvents(){
+    fcv.on('mouse:down', function(opt){
+      if(drawTool==='select' || drawTool==='pen') return;
+      var p=fcv.getPointer(opt.e);
+      drawOrigin={x:p.x, y:p.y};
+      if(drawTool==='text'){
+        var t=new fabric.IText('', {left:p.x, top:p.y,
+          fontFamily:'"Hanken Grotesk",system-ui,sans-serif', fontWeight:700,
+          fontSize:14+drawWidth*3.5, fill:drawColor});
+        fcv.add(t); fcv.setActiveObject(t); t.enterEditing(); t.selectAll();
+        return;
+      }
+      if(drawTool==='line' || drawTool==='arrow'){
+        drawLive=new fabric.Line([p.x,p.y,p.x,p.y],
+          {stroke:drawColor, strokeWidth:drawWidth, selectable:false, evented:false});
+      } else if(drawTool==='rect'){
+        drawLive=new fabric.Rect({left:p.x, top:p.y, width:0, height:0,
+          fill:'rgba(0,0,0,0)', stroke:drawColor, strokeWidth:drawWidth,
+          selectable:false, evented:false});
+      } else if(drawTool==='ellipse'){
+        drawLive=new fabric.Ellipse({left:p.x, top:p.y, rx:0, ry:0,
+          fill:'rgba(0,0,0,0)', stroke:drawColor, strokeWidth:drawWidth,
+          selectable:false, evented:false});
+      }
+      if(drawLive) fcv.add(drawLive);
+    });
+    fcv.on('mouse:move', function(opt){
+      if(!drawLive || !drawOrigin) return;
+      var p=fcv.getPointer(opt.e);
+      if(drawLive.type==='line'){
+        drawLive.set({x2:p.x, y2:p.y});
+      } else {
+        var x0=Math.min(drawOrigin.x,p.x), y0=Math.min(drawOrigin.y,p.y);
+        var w=Math.abs(p.x-drawOrigin.x), h=Math.abs(p.y-drawOrigin.y);
+        if(drawLive.type==='rect') drawLive.set({left:x0, top:y0, width:w, height:h});
+        else drawLive.set({left:x0+w/2, top:y0+h/2, rx:w/2, ry:h/2});
+      }
+      drawLive.setCoords(); fcv.requestRenderAll();
+    });
+    fcv.on('mouse:up', function(){
+      drawOrigin=null;
+      if(!drawLive) return;
+      var s=drawLive; drawLive=null;
+      var tooSmall = (s.type==='line')
+        ? (Math.abs(s.x2-s.x1)<3 && Math.abs(s.y2-s.y1)<3)
+        : (s.type==='rect') ? (s.width<3 && s.height<3) : ((s.rx*2)<3 && (s.ry*2)<3);
+      if(tooSmall){ fcv.remove(s); fcv.requestRenderAll(); return; }   // clic sin arrastrar: no crea figura vacía
+      if(drawTool==='arrow' && s.type==='line'){
+        var x1=s.x1,y1=s.y1,x2=s.x2,y2=s.y2;
+        fcv.remove(s);
+        var dx=x2-x1, dy=y2-y1, ang=Math.atan2(dy,dx), size=Math.max(12,drawWidth*3.4);
+        var head=new fabric.Triangle({left:x2, top:y2, originX:'center', originY:'center',
+          width:size, height:size*1.2, fill:drawColor, angle:ang*180/Math.PI+90});
+        var shaft=new fabric.Line([x1,y1,x2,y2], {stroke:drawColor, strokeWidth:drawWidth});
+        var grp=new fabric.Group([shaft,head], {dArrow:true});
+        fcv.add(grp); fcv.setActiveObject(grp);
+      } else {
+        s.set({selectable:true, evented:true});
+        fcv.setActiveObject(s);
+      }
+      fcv.requestRenderAll();
+      pushHistory();
+    });
+    fcv.on('path:created', function(){ pushHistory(); });
+    fcv.on('object:modified', function(){ pushHistory(); });
+    fcv.on('text:editing:exited', function(e){
+      var t=e.target;
+      if(t && !String(t.text||'').trim()){ fcv.remove(t); fcv.requestRenderAll(); }
+      else pushHistory();
+    });
+    fcv.on('selection:created', drawSyncSelPanel);
+    fcv.on('selection:updated', drawSyncSelPanel);
+    fcv.on('selection:cleared', function(){ $('drawProps').hidden=true; });
+    // Clic derecho = alternar candado (además del botón 🔒 del panel). Solo
+    // tiene sentido en modo Seleccionar; en otro modo skipTargetFind ya impide
+    // encontrar el objeto bajo el puntero.
+    fcv.upperCanvasEl.addEventListener('contextmenu', function(e){
+      if(drawTool!=='select') return;
+      var target=fcv.findTarget(e);
+      if(target){ e.preventDefault(); fcv.setActiveObject(target); setLocked([target], !target.dLocked); }
     });
   }
 
   function openDrawDlg(existing, onDone){
     drawOnDone = onDone || null;
-    buildDrawBar();
-    if(canKeepEditing(existing)){
-      drawShapes = drawMemo.shapes.slice();
-      drawBg     = drawMemo.bg;
-      drawSay('Puedes seguir editando el dibujo que ya tiene esta casilla.');
-    } else {
-      drawShapes = [];
-      drawBg     = $('drawBgSel').value || 'blank';   // conserva el fondo elegido antes
-      drawSay('');
-    }
-    drawUndone=[]; drawLive=null;
-    $('drawBgSel').value=drawBg;
-    drawSyncBtns(); redraw();
     var d=$('drawDlg');
+    drawSay('Cargando el editor…');
     if(d.showModal) d.showModal(); else d.setAttribute('open','');
+    ensureFabric().then(function(){
+      buildDrawBar();
+      if(!fcv){
+        fcv=new fabric.Canvas('drawCanvas', {selection:true, preserveObjectStacking:true});
+        fcv.setWidth(DRAW_W); fcv.setHeight(DRAW_H);
+        wireCanvasEvents();
+      }
+      fcv.discardActiveObject(); fcv.clear();
+      function afterLoad(){
+        drawHistory=[drawSnapshot()]; drawHistoryPos=0;
+        drawSyncBtns(); drawSyncSelPanel();
+        $('drawBgSel').value=drawBg;
+        var bgcBox=$('drawBgColors'), bgcBtn=null;
+        for(var i=0;i<bgcBox.children.length;i++){ if(bgcBox.children[i].dataset.bg===drawBgColor){ bgcBtn=bgcBox.children[i]; break; } }
+        drawPressGroup(bgcBox, bgcBtn);
+        setDrawTool('select');
+        drawPressGroup($('drawTools'), $('drawTools').children[0]);
+        resizeDrawStage();
+      }
+      if(canKeepEditing(existing)){
+        drawRestoring=true;
+        fcv.loadFromJSON(drawMemo.json, function(){
+          drawBg=drawMemo.bg; drawBgColor=drawMemo.bgColor;
+          applyBackground(); drawRestoring=false;
+          drawSay('Puedes seguir editando el dibujo que ya tiene esta casilla.');
+          afterLoad();
+        });
+      } else {
+        drawBg=$('drawBgSel').value || 'blank';   // conserva el fondo elegido antes
+        // drawBgColor NO se reasigna aquí a propósito: al ser botones (no un
+        // <select> nativo) no hay dónde "leer" el último valor salvo la propia
+        // variable, así que dejarla intacta ya conserva el color elegido antes.
+        applyBackground();
+        drawSay('');
+        afterLoad();
+      }
+    }).catch(function(err){
+      drawSay('No se pudo cargar el editor de dibujo ('+err.message+'). Revisa tu conexión e inténtalo de nuevo.', true);
+    });
   }
 
-  $('drawUndoBtn').onclick=function(){
-    if(!drawShapes.length) return;
-    drawUndone.push(drawShapes.pop()); redraw(); drawSyncBtns(); drawSay('');
-  };
-  $('drawRedoBtn').onclick=function(){
-    if(!drawUndone.length) return;
-    drawShapes.push(drawUndone.pop()); redraw(); drawSyncBtns(); drawSay('');
-  };
+  $('drawUndoBtn').onclick=function(){ drawUndo(); };
+  $('drawRedoBtn').onclick=function(){ drawRedo(); };
   $('drawClearBtn').onclick=function(){
-    if(!drawShapes.length) return;
-    // Al revés, para que «Rehacer» los vaya devolviendo en el orden original.
-    drawUndone=drawShapes.slice().reverse(); drawShapes=[];
-    redraw(); drawSyncBtns();
-    drawSay('Lienzo limpio. Si fue sin querer, «Rehacer» devuelve los trazos uno a uno.');
+    if(!fcv || !fcv.getObjects().length) return;
+    fcv.discardActiveObject();
+    fcv.getObjects().slice().forEach(function(o){ fcv.remove(o); });
+    fcv.requestRenderAll(); drawSyncSelPanel(); pushHistory();
+    drawSay('Lienzo limpio. Si fue sin querer, «Deshacer» lo recupera todo de una vez.');
   };
-  // Atajos de siempre. El aviso va inline porque el toast global quedaría tapado
-  // por el propio diálogo (ver CLAUDE.md).
+  // Atajos de siempre + Supr/Retroceso para borrar la selección (antes no existía
+  // "seleccionar", así que tampoco hacía falta). El aviso va inline porque el
+  // toast global quedaría tapado por el propio diálogo (ver CLAUDE.md).
   $('drawDlg').addEventListener('keydown', function(e){
-    if(!(e.ctrlKey||e.metaKey)) return;
-    // Dentro de la casilla de texto, Ctrl+Z es el deshacer del propio campo.
     var tn=(e.target.tagName||'').toLowerCase();
     if(tn==='input'||tn==='select'||tn==='textarea') return;
+    if((e.key==='Delete'||e.key==='Backspace') && fcv){
+      var obj=fcv.getActiveObject();
+      if(obj && !obj.isEditing){ e.preventDefault(); $('dpDel').click(); }
+      return;
+    }
+    if(!(e.ctrlKey||e.metaKey)) return;
     var k=e.key.toLowerCase();
-    if(k==='z' && !e.shiftKey){ e.preventDefault(); $('drawUndoBtn').click(); }
-    else if(k==='y' || (k==='z' && e.shiftKey)){ e.preventDefault(); $('drawRedoBtn').click(); }
+    if(k==='z' && !e.shiftKey){ e.preventDefault(); drawUndo(); }
+    else if(k==='y' || (k==='z' && e.shiftKey)){ e.preventDefault(); drawRedo(); }
   });
 
   $('drawInsert').onclick=function(){
-    if(!drawShapes.length){
+    if(!fcv || !fcv.getObjects().length){
       drawSay('El lienzo todavía está vacío: dibuja algo antes de insertarlo.', true); return;
     }
-    var data=drawCv.toDataURL('image/png');   // PNG y no JPEG: el JPEG ensucia los bordes del trazo
+    fcv.discardActiveObject();
+    // Exportar SIEMPRE a la resolución interna real (1000x700), sin importar el
+    // zoom visual que resizeDrawStage() le puso para caber en el diálogo -- si
+    // no, en una pantalla angosta el PNG saldría más chico de lo que debería.
+    var z=fcv.getZoom(), w=fcv.getWidth(), h=fcv.getHeight();
+    fcv.setZoom(1); fcv.setWidth(DRAW_W); fcv.setHeight(DRAW_H); fcv.renderAll();
+    var data=fcv.toDataURL({format:'png'});   // PNG y no JPEG: el JPEG ensucia los bordes del trazo
+    fcv.setZoom(z); fcv.setWidth(w); fcv.setHeight(h); fcv.renderAll();
     var bytes=b64Bytes(data);
     if(bytes>IMG_LIMIT){
       drawSay('El dibujo pesa '+(bytes/1048576).toFixed(2)+' MB y el máximo es 1 MB. Usa un fondo más simple (el milimetrado es el que más pesa) o quita algunos trazos.', true);
       return;
     }
     var img=makeImage('dib',{dataUrl:data, ext:'png'});
-    // Recordar los trazos permite volver a abrir y seguir dibujando esta imagen.
-    drawMemo={ image:img, shapes:drawShapes.slice(), bg:drawBg };
+    // Recordar el JSON del canvas permite volver a abrir y seguir editando.
+    drawMemo={ image:img, json:drawSnapshot(), bg:drawBg, bgColor:drawBgColor };
     var d=$('drawDlg'); if(d.close) d.close(); else d.removeAttribute('open');
     if(drawOnDone) drawOnDone(img);
     toast('Dibujo insertado en la pregunta');   // ya sin diálogo abierto: el toast sí se ve

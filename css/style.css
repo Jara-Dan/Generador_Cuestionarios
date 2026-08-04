@@ -193,6 +193,29 @@
   #fxField::part(container){overflow-x:auto;}
   .ML__placeholder{border:1.5px dashed var(--accent)!important;border-radius:4px;
     min-width:.85em;padding:0 .12em;opacity:1!important;}
+  /* fxDlg es el único diálogo que NO usa showModal() (ver la nota grande en
+     js/main.js, openFxDlg): así el teclado virtual de MathLive —fijo en <body>,
+     con el tamaño responsive que la propia librería calcula— no queda tapado por
+     la "capa superior" del navegador ni "inerte" (showModal() vuelve inertes los
+     clics fuera del diálogo). .show() no centra el diálogo ni trae backdrop, así
+     que se arman a mano aquí. z-index bajo cualquier z-index normal de la página
+     (el header usa 20) pero bajo el z-index propio del teclado de MathLive
+     (105 en la versión usada) para que el teclado quede siempre por encima.
+     --kb-height (0px si el teclado está cerrado) la actualiza js/main.js con el
+     alto REAL que reporta MathLive. Centrado con top:50%+transform en vez del
+     truco "top+bottom+margin:auto" a propósito: ese combo depende de un caso
+     bastante fino del algoritmo de tamaño de CSS (auto-stretch que luego un
+     max-height recorta, y recién ahí los márgenes auto reparten el sobrante) —
+     con translate() el centro se calcula a mano sobre SOLO el espacio libre
+     (100% del alto menos el teclado) y no hay ambigüedad posible. max-height
+     resta lo mismo para que, si el contenido no cabe, se achique en vez de
+     invadir el área del teclado — ver la nota junto a 'virtual-keyboard-toggle'. */
+  #fxDlg{position:fixed;top:calc(50% - var(--kb-height,0px)/2);left:50%;
+    transform:translate(-50%,-50%);margin:0;
+    z-index:60;max-height:calc(100vh - 40px - var(--kb-height,0px));overflow-y:auto;
+    transition:top .15s,max-height .15s;}
+  #fxBackdrop{position:fixed;inset:0;background:rgba(32,25,15,.45);z-index:55;}
+  #fxBackdrop[hidden]{display:none;}
 
   .fx-adv{margin:4px 0 14px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface-2);}
   .fx-adv summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);}
@@ -279,12 +302,14 @@
   #examCrestArea .img-prev img{max-width:96px;max-height:96px;object-fit:contain;background:var(--surface);}
 
   /* ==========================================================================
-     LIENZO DE DIBUJO (Fase 3)
-     El canvas tiene resolución interna fija (1000x700) y se muestra escalado por
-     CSS con width:100%. Por eso el JS mapea el punto del puntero con
-     getBoundingClientRect() -> si no, el trazo saldría desplazado del cursor.
-     `touch-action:none` es obligatorio: sin él la página se desplaza al dibujar
-     con el dedo y no llega ningún pointermove.
+     LIENZO DE DIBUJO (Fase 3 -> motor Fabric.js desde la Fase 10-A)
+     El canvas tiene resolución interna fija (1000x700, sigue igual). Antes esto
+     escalaba con CSS width:100% sobre un <canvas> plano; desde que el motor es
+     Fabric.js, Fabric arma sus propios elementos (.canvas-container con el
+     lower-canvas y el upper-canvas superpuestos) y el JS controla el tamaño
+     visible con canvas.setZoom()+setWidth()/setHeight() -- ver resizeDrawStage()
+     en main.js. Por eso aquí ya NO hay una regla de ancho/alto para #drawCanvas:
+     el tamaño real lo pone Fabric por JS, y esta hoja solo centra el contenedor.
      ========================================================================== */
   .draw-bar{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;padding:12px 14px;
     border:1px solid var(--line);border-radius:11px;background:var(--surface-2);margin-bottom:12px;}
@@ -305,10 +330,27 @@
   .draw-grp .row .draw-sw{width:30px;min-width:30px;height:30px;padding:0;border-radius:50%;border:2px solid var(--line);}
   .draw-grp .row .draw-sw:hover{border-color:var(--ink);}
   .draw-grp .row .draw-sw[aria-pressed=true]{border-color:var(--ink);box-shadow:0 0 0 3px var(--accent-soft);}
-  #drawBgSel{max-width:100%;height:36px;}
-  #drawText{width:160px;padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);font-size:14px;}
-  .draw-stage{border:1px solid var(--line);border-radius:11px;overflow:hidden;background:#fff;}
-  #drawCanvas{display:block;width:100%;height:auto;touch-action:none;cursor:crosshair;}
+  /* El `select` global (línea 79) trae padding:9px 11px, pensado para una caja de
+     altura automática. Aquí forzamos height:36px para alinear con los botones de al
+     lado, y ese padding vertical ya no cabe: 36 - 2px de borde - 18px de padding deja
+     solo 16px para un texto de 16px/line-height normal (~19px), y la letra se ve
+     recortada arriba y abajo. Se pisa el padding vertical a 4px (deja 26px de sobra)
+     sin tocar el horizontal, que sigue viniendo del `select` global. */
+  #drawBgSel{max-width:100%;height:36px;padding-top:4px;padding-bottom:4px;}
+  .draw-workspace{display:flex;gap:14px;align-items:flex-start;}
+  .draw-stage{flex:1 1 auto;min-width:0;display:flex;justify-content:center;
+    border:1px solid var(--line);border-radius:11px;overflow:auto;background:#fff;}
+  /* Panel contextual: solo aparece con algo seleccionado (drawSyncSelPanel en
+     main.js). Ancho fijo para que el lienzo no "salte" de tamaño cuando aparece
+     o desaparece -- eso movería el punto donde el docente tiene el dedo/lápiz. */
+  .draw-props{flex:0 0 190px;width:190px;border:1px solid var(--line);border-radius:11px;
+    background:var(--surface-2);padding:12px;display:flex;flex-direction:column;gap:12px;}
+  .draw-props-title{font-size:12.5px;font-weight:700;color:var(--muted);}
+  .draw-props .draw-grp .row{flex-wrap:wrap;}
+  .draw-props-actions{display:flex;flex-direction:column;gap:6px;}
+  .draw-props-actions button{width:100%;justify-content:flex-start;min-width:0;}
+  #dpLock[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-dark);}
+  #dpOpacity{width:100%;}
   /* La confirmación y los errores del lienzo viven DENTRO del diálogo: un
      <dialog> abierto se pinta en la capa superior y taparía el #toast global. */
   .draw-msg{display:none;font-size:13px;margin-top:10px;padding:9px 12px;border-radius:9px;
@@ -329,9 +371,10 @@
     .draw-grp .row{gap:4px;}
     .draw-grp .row button{min-width:34px;height:34px;padding:0 6px;}
     .draw-grp .row .draw-sw{width:26px;min-width:26px;height:26px;}
-    #drawBgSel{height:34px;font-size:13.5px;}
-    #drawText{width:118px;font-size:13.5px;}
+    #drawBgSel{height:34px;font-size:13.5px;padding-top:4px;padding-bottom:4px;}
     .draw-actions .btn-primary{margin-right:0;width:100%;}
+    .draw-workspace{flex-direction:column;}
+    .draw-props{flex:1 1 auto;width:100%;}
   }
 
   /* Advanced */
