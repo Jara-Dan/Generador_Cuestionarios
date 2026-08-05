@@ -117,7 +117,7 @@ agrupador no se pierda la selección.
 | 7 | Botón **«Novedades»** con los cambios de cada versión | **Hecho** |
 | 8 | **Buzón de sugerencias** para que los docentes escriban a Daniel | **Hecho** |
 | 9 | **Generador con IA: LaTeX → fórmula visual** al importar | **Hecho** |
-| 10 | **Editor de dibujo → editor de diagramas didácticos** (motor Fabric.js, capas, conectores, plantillas, sellos) — reemplaza el motor de la Fase 3 | **En curso — Fase A hecha** (2026-07-30), B-G sin empezar. Ver fases A-G más abajo |
+| 10 | **Editor de dibujo → editor de diagramas didácticos** (motor Fabric.js, capas, conectores, plantillas, sellos) — reemplaza el motor de la Fase 3 | **En curso — Fases A y B hechas** (2026-07-30 y 2026-08-04), C-G sin empezar. Ver fases A-G más abajo |
 
 Las fases 5 y 6 se hicieron juntas el 2026-07-29, como estaba previsto: las dos tocaban
 el mismo export a Word. Su documentación está en «Fórmulas en el Word» y «Formato de
@@ -285,7 +285,7 @@ sobreviva a un `/clear` de la conversación.
 | Fase | Alcance |
 |---|---|
 | A | Motor Fabric.js + paridad de herramientas actuales como objetos vivos (seleccionar/mover/rotar/reescalar/editar propiedades), multi-selección, agrupar, candado (botón + clic derecho), capas (frente/fondo/duplicar/papelera/bloquear), deshacer/rehacer, fondos actuales migrados tal cual |
-| B | Lienzo infinito: manita (pan), zoom con rueda + botones, recorte automático al exportar (bounding box del contenido real) |
+| B | Lienzo infinito: manita (pan), zoom con rueda + botones, recorte automático al exportar (bounding box del contenido real). **Ampliada tras la revisión de Daniel**: fondo infinito de verdad, cromo de aplicación con barra de acciones siempre visible, herramientas que no se quedan armadas, y desplegable de formas geométricas |
 | C | Imagen de fondo (subir foto), auto-bloqueo, resaltador, anotación sobre fotos (flechas, círculos, cotas de medida "10 cm", texto) |
 | D | Conectores anclados a formas (recto/ortogonal/curvo) + cajas de texto con borde/relleno para mapas conceptuales |
 | E | Plantillas pedagógicas: Venn, línea de tiempo, ciclo, cuadro comparativo, mapa conceptual prearmado, rotulado con líneas guía |
@@ -325,6 +325,10 @@ Detalle y decisiones de cada fase:
     `applyBackground()`) para no arrastrar una copia del PNG de fondo en cada
     paso — antes tampoco era "deshacible" cambiar el fondo, así que el
     comportamiento no cambió, solo cómo se logra.
+    **⚠️ Superado por la Fase B**: el fondo ya no se rasteriza a un PNG ni usa
+    `backgroundImage`/`backgroundColor` de Fabric — se pinta por fotograma en
+    `renderCanvasBg()` para que sea infinito. Lo que SÍ sigue igual es que el
+    fondo no viaja en el historial.
   - **La herramienta Flecha arma un `fabric.Group` (línea + triángulo) marcado
     con `dArrow:true`.** Sin esa marca, el botón "Desagrupar" la partiría en sus
     dos piezas sueltas la primera vez que alguien seleccione una flecha y
@@ -344,6 +348,10 @@ Detalle y decisiones de cada fase:
     botón "Insertar" restaura zoom=1 y 1000×700 antes de `toDataURL()` y
     devuelve el zoom visual después. Comprobado: el PNG insertado midió
     1000×700 px sin importar que el lienzo se viera a 591×414 en pantalla.
+    **⚠️ Superado por la Fase B**: ya NO se exporta a 1000×700, sino recortado
+    al contenido real (`contentBBox()`), y lo que se restaura antes de
+    `toDataURL()` es el `viewportTransform` entero, no solo el zoom. Se deja
+    escrito por qué existía la regla, no para seguirla.
   - **La casilla "Texto por escribir" del formulario (Fase 3) desapareció.** Ya
     no hace falta escribir el rótulo antes de tocar el lienzo: la herramienta
     Texto ahora crea un `fabric.IText` que entra en edición al instante (texto
@@ -357,8 +365,308 @@ Detalle y decisiones de cada fase:
     borrar) recupera cada paso exacto en ambos sentidos; los 6 fondos y 7
     colores de fondo se rasterizan con los píxeles exactos esperados; y
     "Seguir editando el dibujo" retoma el JSON guardado con el fondo intacto.
-- **Fase B.** Obliga probablemente a agrandar el diálogo (hoy `max-width:860px`),
-  quizás a pantalla completa, porque ya no cabe cómodo con la barra ampliada.
+- **Fase B.** Lienzo infinito con mano/zoom, y recorte automático al exportar.
+
+  **Hecha (2026-08-04).** El diálogo ya tenía `max-width:1320px` desde la Fase A (no
+  hizo falta agrandarlo más). Lo que sí cambió de raíz es la relación entre el
+  elemento `<canvas>` y la "página" de 1000×700:
+
+  - **Antes (Fase A):** el `<canvas>` se dimensionaba SIEMPRE igual a la página
+    escalada (`canvas.setZoom(scale)` + `setWidth(DRAW_W*scale)`) — el canvas ERA
+    la página, solo que más chica.
+  - **Ahora (Fase B):** el `<canvas>` es una VENTANA de tamaño fijo (el alto/ancho
+    de `.draw-stage`, ver CSS) que se recorre con pan/zoom real
+    (`canvas.viewportTransform`) — la página es un objeto más dentro de ese
+    lienzo, no el lienzo mismo. `resizeDrawStage()` solo ajusta el tamaño de la
+    ventana (nunca toca el zoom/pan, para no perder la vista del docente al
+    redimensionar); `fitToPage()` centra la página con un 6 % de aire y es la que
+    se llama, aparte, cada vez que se ABRE el diálogo (nuevo dibujo o retomar uno
+    existente) — así el docente siempre empieza viendo la página completa sin
+    importar en qué pan/zoom quedó `fcv` (la instancia se reutiliza entre
+    aperturas) la última vez.
+
+  **El color de fondo dejó de vivir en `canvas.backgroundColor`.** En la Fase A
+  tiñe TODO el canvas visible, lo cual era correcto porque el canvas era
+  exactamente la página. Con el lienzo infinito eso teñiría también el vacío de
+  alrededor. Ahora el color de relleno (`fillRect` del `drawBgColor`) y un borde
+  fino (`#c7bfae`) que marca el límite de la página se hornean DENTRO de la misma
+  imagen offscreen que ya rasterizaba el patrón (`applyBackground()`), y viajan
+  como `backgroundImage` — así solo cubren la página (0,0)-(1000,700) y se
+  desplazan/hacen zoom junto con el contenido, como se espera de una "página dentro
+  de un lienzo infinito". `canvas.backgroundColor` pasó a `null`; el vacío
+  alrededor de la página lo pinta el CSS de `.draw-stage` (`#ddd6c7`, un gris cálido
+  distinto del blanco de la página, para que el borde se note).
+
+  **Herramienta Mano (🖐):** nuevo tool `pan` en `DRAW_TOOLS`, entre Seleccionar y
+  Lápiz. Activa `skipTargetFind` (igual que las herramientas de forma: arrastrar
+  con la Mano sobre una figura debe mover el LIENZO, no la figura) y usa
+  `canvas.relativePan()` sobre los deltas de `getPointer(e, true)` (con
+  `ignoreVpt:true`, así se leen en píxeles de pantalla y no en coordenadas ya
+  transformadas por el zoom/pan actual). `getPointer` ya resuelve touch vs. ratón
+  por dentro, así que la Mano funciona igual con el dedo en una tablet, sin volver
+  a la maquinaria de Pointer Events a mano de la Fase 3.
+
+  **Zoom:** rueda del ratón vía el evento `mouse:wheel` de Fabric
+  (`canvas.zoomToPoint()`, centrado en el puntero — igual que Figma/Canva, para
+  que la vista no "salte"), más tres botones (`−`/`+`/`⤢ Ajustar`) que hacen zoom
+  centrado en el medio de la ventana o piden `fitToPage()`. Acotado entre 15 % y
+  400 % (`clampZoom()`). El listener de `wheel` que arma Fabric internamente NO es
+  pasivo (se comprobó leyendo `vendor/fabric.min.js`: solo `mousemove`/`touchstart`
+  llevan `{passive:false}` explícito, pero `wheel` no lleva ninguna opción, y los
+  navegadores no la hacen pasiva por defecto salvo para touch) — por eso
+  `e.preventDefault()` sí evita que la rueda además desplace la página detrás del
+  diálogo.
+
+  **Recorte automático al exportar (`contentBBox()`):** "Insertar" ya no exporta
+  siempre la página completa de 1000×700. Calcula la caja que envuelve TODOS los
+  objetos reales (`getBoundingRect(true,true)` de cada uno, unidas), le agrega
+  28 px de aire alrededor, y si algún lado queda por debajo de 120 px lo infla
+  hasta ese mínimo (para que un trazo puntual no exporte una imagen microscópica).
+  El recorte usa las opciones `left/top/width/height` de `canvas.toDataURL()` —
+  **importante:** esas coordenadas son relativas al `viewportTransform` ACTUAL, no
+  al espacio de los objetos, así que antes de exportar hay que resetear la vista a
+  identidad (`setViewportTransform([1,0,0,1,0,0])`) y restaurarla después, igual
+  que antes se reseteaba el zoom (Fase A) pero ahora también el pan. Esto significa
+  que el pan/zoom con el que el docente ESTÁ MIRANDO el lienzo en el momento de
+  insertar no afecta en nada al resultado exportado — es intencional: lo que se
+  exporta es lo que hay dibujado, no lo que se ve en pantalla.
+
+  Detalles que no eran obvios de antemano:
+  - **`getBoundingRect(absolute, calculate)` de Fabric devuelve coordenadas en el
+    espacio de `object.left/top`, NO en píxeles de pantalla** — el
+    `viewportTransform` se aplica solo al pintar, nunca se hornea en las
+    coordenadas de los objetos. Por eso el reseteo a identidad antes de recortar
+    es imprescindible: con cualquier otro pan/zoom activo, `left/top/width/height`
+    de `toDataURL()` se leerían en el espacio de pantalla equivocado y el recorte
+    saldría desplazado.
+  - **`canvas.toDataURL()` con `left/top/width/height` NO depende del tamaño en
+    píxeles del `<canvas>` en pantalla** — `toCanvasElement()` arma un canvas
+    offscreen del tamaño exacto del recorte y renderiza ahí directo
+    (`renderCanvas()`, síncrono, sin pasar por la ventana visible). Por eso ya no
+    hace falta forzar `setWidth(DRAW_W)`/`setHeight(DRAW_H)` antes de exportar
+    como en la Fase A: el tamaño de exportación lo decide el recorte, no el
+    tamaño de la ventana.
+  - **`canvas.setViewportTransform()`/`relativePan()`/`zoomToPoint()` mutan el
+    estado de forma síncrona, pero el REPINTADO en pantalla es asíncrono**
+    (`requestRenderAll()` agenda el redibujado con `requestAnimationFrame`, no
+    lo hace al instante). Esto costó descubrirlo verificando: comprobar un pan
+    leyendo los píxeles del canvas justo después de disparar el evento dio
+    siempre "sin cambios", porque el frame nuevo aún no se había pintado; hubo
+    que interceptar `relativePan()` (parche temporal de depuración sobre
+    `fabric.Canvas.prototype`, revertido después) y leer `viewportTransform`
+    directamente para confirmar que el pan sí se aplicaba con los deltas
+    correctos. `toDataURL()` en cambio SÍ renderiza síncrono (ver punto
+    anterior), así que el recorte de exportación no sufre este problema.
+  - **`.draw-stage` pasó de `overflow:auto` a `overflow:hidden` y de fondo blanco
+    fijo a un gris cálido (`#ddd6c7`)**, con un alto explícito
+    (`height:min(58vh,600px)`, `46vh` en móvil) que antes no hacía falta porque el
+    canvas medía exacto lo mismo que la página escalada y el contenedor flex
+    heredaba esa altura solo.
+  - Verificado en el navegador (no solo leyendo el código, e interceptando
+    `relativePan` para confirmar el estado real ya que el panel de vista previa de
+    esta sesión no compone fotogramas): el `<canvas>` se dimensiona de forma
+    independiente a la página (964×416 de ventana mostrando una página de
+    1000×700 al 56 %, no 1000×700 directo); la rueda cambia el zoom (56 %→75 %,
+    acotado y con `preventDefault`); los tres botones de zoom (94 %/60 %/`Ajustar`
+    → 56 %) calzan con el cálculo esperado; la Mano mueve `viewportTransform[4]/[5]`
+    exactamente con el delta arrastrado; en móvil (375×812) el lienzo pasa a
+    columna con un alto propio (312×370, ajuste a 29 %); y un rectángulo pequeño
+    exportó un PNG de 131×120 px — ni 1000×700 ni el tamaño exacto del trazo,
+    sino trazo+28px de aire con el alto clamped al mínimo de 120, tal como se
+    calculó a mano.
+
+  #### Revisión de Daniel sobre la Fase B (2026-08-04) — cinco correcciones
+
+  Daniel probó la primera versión de la Fase B y reportó cinco cosas. La primera
+  obligó a **rehacer el modelo del lienzo**, no solo a ajustar un número:
+
+  **1. «Al alejar, el lienzo se ve diminuto».** La primera versión entendió
+  "lienzo infinito" como *una hoja de 1000×700 flotando en un vacío gris que se
+  puede recorrer*. Lo que Daniel quería es lo contrario: **por más que aleje,
+  poder seguir dibujando**; el zoom es para acercarse a corregir un detalle y
+  luego volver. Con el modelo de "hoja", alejar solo servía para ver la hoja más
+  pequeña y rodeada de nada — inútil.
+
+  El arreglo es de fondo: **ya no hay página**. `applyBackground()` dejó de
+  rasterizar un PNG de 1000×700 como `backgroundImage`; ahora `renderCanvasBg()`
+  pinta el fondo **en cada fotograma** enganchado al evento `before:render` de
+  Fabric, sobre la región visible (`canvas.vptCoords`), así que la cuadrícula
+  **no se acaba nunca**. Comprobado: desplazándose a la coordenada
+  (−22.500, −15.000) y al 40 % de zoom, las cuatro esquinas del lienzo siguen
+  teniendo cuadrícula.
+
+  Detalles que hay que respetar aquí:
+  - **`before:render` recibe el contexto ya limpio y ANTES de aplicar el
+    viewportTransform**, así que dentro hay que aplicar la matriz a mano
+    (`ctx.transform(...vt)`) para trabajar en coordenadas de dibujo.
+  - **El grosor de las líneas de fondo se mide en píxeles de PANTALLA**
+    (`px(z) = 1/zoom`), no en unidades de dibujo. Sin esto, al alejar las líneas
+    se juntan hasta volverse una mancha gris y al acercar se convierten en
+    barrotes. Además se omite una familia de líneas cuando su separación en
+    pantalla bajaría de 5 px (`if(step*z < 5) return`).
+  - **Dos familias de fondo, a propósito.** Los **periódicos** (cuadrícula,
+    milimetrado, isométrico) se repiten sin fin. El **plano cartesiano** y la
+    **recta numérica** siguen siendo figuras ACOTADAS al área de trabajo: tienen
+    un origen y una escala concretos, un plano cartesiano "infinito" sin números
+    no significaría nada, y sus flechas tendrían que vivir en el borde de la
+    ventana moviéndose al desplazarse. Su trazo sí escala con el zoom (son parte
+    de la figura, no del papel).
+  - `DRAW_W`/`DRAW_H` dejaron de ser "la página" y pasaron a ser **el área de
+    trabajo inicial**: lo que se encuadra al abrir y donde se anclan esos dos
+    fondos. Como la exportación ya recorta al contenido, sus medidas exactas no
+    condicionan el resultado.
+  - **El zoom mínimo subió de 15 % a 40 %** (máximo 400 % → 500 %). Alejar sirve
+    para ganar sitio donde dibujar, no para ver el dibujo en miniatura, así que
+    un mínimo generoso no quita nada y evita llegar a una escala inservible.
+  - `fitToPage()` se reemplazó por **`fitToContent()`** («⤢ Ver todo lo
+    dibujado», lo único que significa algo en un lienzo sin bordes, y el botón
+    de rescate si alguien se desplazó lejos y perdió el dibujo de vista) más
+    **`resetView()`** («⌂ Volver al área de trabajo»). La vista inicial es al
+    100 % si cabe: se prefiere el trazo a tamaño real antes que un encuadre
+    diminuto con tal de que quepa todo.
+
+  **2. «La barra de abajo se pierde».** El diálogo era un documento que crecía
+  con su contenido, así que «Insertar», «Deshacer» y «Limpiar» quedaban por
+  debajo del borde de la pantalla y había que desplazarse para terminar la tarea
+  principal. Ahora es una **ventana de aplicación**: `.draw-dlg` con alto fijo
+  (94vh; pantalla completa en móvil) y `.draw-shell` como columna flex de cuatro
+  filas — cabecera / barra / lienzo / acciones — donde **solo el lienzo crece**.
+  La clave es `flex:1` + **`min-height:0`** en `.draw-workspace`: sin
+  `min-height:0` un hijo flex no baja de su tamaño de contenido y volvería a
+  empujar la barra de acciones fuera de la ventana.
+
+  De paso, dos controles se sacaron de la barra y **flotan sobre el lienzo**
+  (patrón Figma/Canva): el **zoom** (esquina inferior izquierda) y el **panel de
+  propiedades** (`.draw-props`, ahora `position:absolute` en vez de una columna
+  propia). Esto último arregla algo real: antes el panel ocupaba 190 px de ancho
+  y **el lienzo cambiaba de tamaño al seleccionar o deseleccionar**, moviendo lo
+  que el docente tenía debajo del dedo o del lápiz.
+
+  **3. «Si inserto una figura y hago otro clic, inserta otra».** Era un error
+  fácil de cometer: tras insertar, el clic siguiente —el natural, para mover o
+  corregir lo que se acaba de poner— creaba otra figura encima. Ahora las
+  herramientas de **insertar** vuelven solas a Seleccionar (`toolDone()`) y
+  dejan la figura recién creada ya seleccionada, lista para moverla o cambiarle
+  el color. **Excepción deliberada:** `DRAW_STICKY_TOOLS` = `select`, `pan` y
+  `pen`, que son **modos continuos** (se dibuja o se desplaza varias veces
+  seguidas); volver a Seleccionar en cada trazo del lápiz sería un estorbo.
+  Como repetir la misma figura pasa a ser lo más frecuente, el botón de formas
+  es **partido**: la cara grande vuelve a armar la última forma de un solo clic.
+
+  **4. «Ya no funciona escribir».** Regresión real de la Fase B, y la causa no
+  era donde parecía. **Fabric cuelga de `<body>` el `<textarea>` oculto** con el
+  que se escribe dentro del lienzo (`initHiddenTextarea`), y este editor vive en
+  un `<dialog>` abierto con `showModal()`, que **deja inerte todo lo que queda
+  fuera del diálogo**: el cuadro de edición no podía recibir el foco. Se veía el
+  cursor parpadeando pero no entraba ni una letra, y `hiddenTextarea.focus()` a
+  mano tampoco hacía nada.
+
+  El arreglo usa el punto de extensión que trae Fabric:
+  `fabric.IText.prototype.hiddenTextareaContainer = $('drawTextHost')`, un
+  contenedor **dentro** del diálogo. Va en el **prototipo**, no objeto por
+  objeto, para que valga también para los textos que Fabric recrea al retomar un
+  dibujo con `loadFromJSON`. `#drawTextHost` es `position:fixed`, 0×0 y
+  `overflow:hidden`, y **no es ancestro del canvas** a propósito: si el
+  navegador intenta desplazarlo para "traerlo a la vista" al enfocar, no puede
+  mover el lienzo. Además ahora se llama a `setDrawTool('select')` **antes** de
+  `enterEditing()`: editar texto exige el modo normal del lienzo
+  (`skipTargetFind:false`, `selection:true`).
+
+  Es la trampa más cara de toda la fase, y aplica a **cualquier** librería de
+  canvas que use un input oculto dentro de un `<dialog>` modal.
+
+  **5. Desplegable de formas.** `DRAW_SHAPES` (20 figuras en 4 grupos) sustituye
+  a los botones sueltos de rectángulo y elipse, que se movieron dentro. La
+  geometría de cada una se define **una sola vez** en `shapeGeom()`, en una caja
+  de 100×100, y de ahí salen **dos cosas a la vez**: el objeto Fabric que se
+  inserta y el **ícono SVG del catálogo** (`shapeIconSVG()`) — así el botón
+  siempre muestra exactamente la figura que va a insertar, sin dibujar los
+  íconos aparte. Agregar una forma nueva es agregar su entrada al catálogo y su
+  geometría; **no hay que tocar los manejadores del ratón**, porque todas se
+  crean igual: nacen con su geometría y se **escalan** al arrastrar.
+
+  Los grupos, elegidos por lo que hace falta en un examen de secundaria:
+  *Básicas* (rectángulo, cuadrado, elipse, círculo, triángulo, triángulo
+  rectángulo) · *Cuadriláteros y polígonos* (rombo, trapecio, paralelogramo,
+  pentágono, hexágono, octágono, estrella) · ***Cuerpos geométricos*** (cubo,
+  cilindro, cono, esfera, pirámide — para ejercicios de volumen y área
+  superficial; antes había que dibujar un cilindro a pulso con el lápiz) ·
+  *Otras* (globo de diálogo, llave `{`).
+
+  Decisiones a respetar:
+  - Los cuerpos geométricos son **alambre** (`fabric.Path` con las aristas
+    internas como subtrazados sueltos), no figuras rellenas.
+  - **`strokeUniform:true` en todas.** Sin él, estirar mucho una figura de un
+    solo lado engorda el contorno en esa dirección y el trazo se ve de grosor
+    distinto en cada lado. Fabric SÍ lo serializa por defecto, así que no hace
+    falta añadirlo a `FABRIC_EXTRA_PROPS` (comprobado en un ida y vuelta por
+    JSON).
+  - `ratio:true` (cuadrado, círculo, cubo, esfera) fuerza ancho=alto al
+    arrastrar: se deforman feo si se estiran de un solo lado.
+
+  Comprobado en el navegador, con el detalle de que **el panel de vista previa
+  de esta sesión no compone fotogramas, así que `requestAnimationFrame` nunca
+  dispara y `requestRenderAll()` no llega a pintar** — hubo que parchear
+  `requestRenderAll` para que renderizara síncrono (y de paso capturar la
+  instancia del canvas, que vive en un closure) antes de poder leer píxeles.
+  Anotar esto porque invalida cualquier medición de píxeles hecha a la ligera en
+  este entorno: las 20 formas se crean con el tipo correcto y vuelven a
+  Seleccionar; arrastrar en zona vacía tras insertar ya **no** crea otra figura
+  (11 → 11 objetos) y un clic en el botón de formas la vuelve a armar (11 → 12);
+  escribir funciona (el textarea queda dentro de `#drawTextHost`, con el foco, y
+  teclear llega al objeto); deshacer/rehacer con las formas nuevas devuelve un
+  estado **idéntico** tras el ida y vuelta por JSON; los 6 fondos se pintan (el
+  cartesiano y la recta numérica acotados, el resto infinitos); el lápiz y la
+  mano siguen armados tras usarlos; el PNG exportado sale 100 % opaco con el
+  color de fondo elegido (88 % de sus píxeles) y la cuadrícula, y la vista
+  (pan/zoom) se restaura intacta tras exportar; el pie con «Insertar» queda
+  dentro de la ventana tanto en escritorio (855 px de diálogo en 910 px de
+  pantalla) como en móvil; y en móvil la barra pasa a **una sola fila
+  deslizable**, con lo que el lienzo pasó de 313 px a 564 px de alto (antes el
+  cromo ocupaba más que el propio lienzo).
+
+  #### Dos correcciones más (2026-08-04, misma sesión)
+
+  **La flecha salía descentrada, sobre todo en horizontal.** `fabric.Triangle`
+  con `originY:'center'` se posiciona por su **centro**, no por su punta, y el
+  código la centraba en el punto donde se soltaba el ratón: la punta sobresalía
+  media cabeza más allá de ese punto y **el asta atravesaba la cabeza hasta su
+  centro**. En diagonal se disimulaba; en horizontal el desfase quedaba a la
+  vista contra la cuadrícula. Ahora se calcula el centro del triángulo
+  retrocediendo medio largo de cabeza desde la punta (`x2-ux*hl/2`), y el asta
+  termina en la **base** de la cabeza (`hl*0.92`, con un pelo de solape para que
+  no aparezca una rendija con el trazo grueso). La cabeza además nunca ocupa más
+  del 60 % del largo: con tamaño fijo, una flecha corta quedaba tapada por su
+  propia punta. Comprobado midiendo el centroide de tinta columna por columna en
+  una flecha horizontal: asta y cabeza comparten centro exacto (201.14 px) de
+  punta a punta; solo varía en los últimos 10 px por el antialiasing de la punta
+  del triángulo, que es inevitable e invisible.
+
+  **El recorte se comía el plano cartesiano / la recta numérica.** El recorte
+  automático se ceñía a `contentBBox()` — solo los objetos dibujados —, así que
+  marcar un punto pequeño a la izquierda del plano exportaba ese punto suelto y
+  **el plano desaparecía**, que era justo lo que se quería mostrar. La causa de
+  fondo es que la Fase B convirtió el fondo en algo puramente decorativo, y eso
+  vale para la cuadrícula pero no para estos dos.
+
+  `anchoredBgBBox()` distingue las dos familias que ya existían en el
+  renderizador: los fondos **periódicos** (cuadrícula, milimetrado, isométrico)
+  devuelven `null` porque son infinitos y no existe un "entero" que encuadrar,
+  mientras que el **plano cartesiano** (área de trabajo completa) y la **recta
+  numérica** (su extensión real, calculada desde `numLineOverlay()`) devuelven su
+  caja, y el encuadre pasa a ser la **unión** de esa caja con lo dibujado.
+
+  Efecto secundario buscado: **con uno de esos dos fondos ya se puede insertar
+  sin haber dibujado nada encima** (antes saltaba «el lienzo está vacío»). Un
+  plano cartesiano en blanco es una imagen legítima — el estudiante grafica
+  encima en el papel.
+
+  Comprobado: plano + un círculo de 35×35 pegado a la izquierda → PNG de
+  1118×756 con el plano entero (antes habrían sido ~91×91 y sin plano); recta
+  numérica sin nada dibujado → 1004×126; cuadrícula + una marca pequeña →
+  120×120, **sin** encuadre extra, o sea que los periódicos no cambiaron; y en
+  el PNG del plano el eje horizontal va de x=28 a x=1027, cruzando más del 90 %
+  del ancho.
 - **Fase C.** **Desviación consciente del pedido original**: el prompt pedía ajustar el
   lienzo "exactamente" a los píxeles originales de la foto cargada. Eso choca con
   `fitImage()` (máx. 1400px, ya documentado arriba: localStorage, memoria, la trampa
@@ -995,6 +1303,15 @@ servirlo por HTTP: `.claude/launch.json` levanta `python -m http.server 8777`.
 **El navegador cachea `main.js` y `style.css` con fuerza**: si un cambio "no aparece",
 casi siempre es caché. **Ctrl+R no basta** — hay que hacer **Ctrl+F5** o añadir `?v=N`
 a la URL.
+
+**Desde la Fase 10-B los dos recursos se enlazan con `?v=` en `index.html`**
+(`css/style.css?v=10b`, `js/main.js?v=10b`) y **hay que subir ese número al publicar
+un cambio en `css/` o `js/`**. No es cosmético: el HTML y el JS dejaron de ser
+independientes (el marcado nuevo del editor de dibujo espera funciones nuevas), así
+que un navegador que sirva una mitad vieja y otra nueva deja el editor roto — no
+degradado, roto. Pasó de verdad al probar la fase: `index.html` llegaba nuevo y
+`main.js` cacheado, y el botón de formas salía vacío y las herramientas sin conectar.
+Un docente con la versión anterior abierta habría visto exactamente eso.
 
 Al probar con herramientas automatizadas, ojo: el panel de vista previa integrado puede
 renderizar `file://` como captura estática **sin ejecutar JavaScript**, y eso parece un

@@ -310,17 +310,33 @@
   #examCrestArea .img-prev img{max-width:96px;max-height:96px;object-fit:contain;background:var(--surface);}
 
   /* ==========================================================================
-     LIENZO DE DIBUJO (Fase 3 -> motor Fabric.js desde la Fase 10-A)
-     El canvas tiene resolución interna fija (1000x700, sigue igual). Antes esto
-     escalaba con CSS width:100% sobre un <canvas> plano; desde que el motor es
-     Fabric.js, Fabric arma sus propios elementos (.canvas-container con el
-     lower-canvas y el upper-canvas superpuestos) y el JS controla el tamaño
-     visible con canvas.setZoom()+setWidth()/setHeight() -- ver resizeDrawStage()
-     en main.js. Por eso aquí ya NO hay una regla de ancho/alto para #drawCanvas:
-     el tamaño real lo pone Fabric por JS, y esta hoja solo centra el contenedor.
+     EDITOR DE DIBUJO (Fase 3 -> motor Fabric.js desde la Fase 10-A -> lienzo
+     infinito con pan/zoom desde la Fase 10-B)
+
+     El diálogo es una VENTANA DE APLICACIÓN, no un documento que se desplaza:
+     alto fijo, tres filas (cabecera / barra / lienzo / acciones) y solo el
+     lienzo crece. Antes el diálogo crecía con su contenido y "Insertar",
+     "Deshacer" y "Limpiar" quedaban por debajo del borde de la pantalla, con
+     lo que había que desplazarse para terminar la tarea principal.
+
+     El elemento <canvas> no lleva medidas aquí: Fabric arma sus propios
+     elementos (.canvas-container con el lower-canvas y el upper-canvas
+     superpuestos) y el JS los dimensiona leyendo el tamaño de .draw-stage
+     (ver resizeDrawStage() en main.js). El canvas es una ventana sobre un
+     lienzo sin bordes: el patrón de fondo se pinta por fotograma y se repite
+     sin fin (renderCanvasBg), así que ya NO hay una "página" que enmarcar ni
+     un vacío alrededor que pintar de gris.
      ========================================================================== */
-  .draw-bar{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;padding:12px 14px;
-    border:1px solid var(--line);border-radius:11px;background:var(--surface-2);margin-bottom:12px;}
+  .draw-dlg{border:none;border-radius:14px;padding:0;width:96vw;max-width:1320px;
+    height:94vh;max-height:94vh;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+  .draw-shell{margin:0;height:100%;display:flex;flex-direction:column;min-height:0;}
+  .draw-head{flex:0 0 auto;display:flex;align-items:center;gap:16px;
+    padding:13px 20px;border-bottom:1px solid var(--line);background:var(--surface);}
+  .draw-head h3{font-size:17px;flex:0 0 auto;}
+  .draw-head-hint{flex:1 1 auto;min-width:0;margin:0;font-size:12.5px;line-height:1.45;color:var(--muted);}
+  .draw-head .btn{flex:0 0 auto;}
+  .draw-bar{flex:0 0 auto;display:flex;flex-wrap:wrap;gap:14px 18px;align-items:flex-end;
+    padding:10px 20px;border-bottom:1px solid var(--line);background:var(--surface-2);}
   .draw-grp{display:flex;flex-direction:column;gap:6px;}
   .draw-grp .lbl{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
   .draw-grp .lbl label{display:inline;font-size:inherit;font-weight:inherit;letter-spacing:inherit;color:inherit;margin:0;}
@@ -345,35 +361,112 @@
      recortada arriba y abajo. Se pisa el padding vertical a 4px (deja 26px de sobra)
      sin tocar el horizontal, que sigue viniendo del `select` global. */
   #drawBgSel{max-width:100%;height:36px;padding-top:4px;padding-bottom:4px;}
-  .draw-workspace{display:flex;gap:14px;align-items:flex-start;}
-  .draw-stage{flex:1 1 auto;min-width:0;display:flex;justify-content:center;
-    border:1px solid var(--line);border-radius:11px;overflow:auto;background:#fff;}
+
+  /* --- Desplegable de formas (botón partido) --- */
+  .shape-picker{position:relative;}
+  .draw-grp .row .shape-main{min-width:44px;padding:0 8px;}
+  .draw-grp .row .shape-main svg{width:22px;height:22px;display:block;}
+  .draw-grp .row .shape-more{min-width:24px;padding:0;font-size:11px;
+    border-left:none;border-radius:0 8px 8px 0;margin-left:-5px;}
+  .draw-grp .row .shape-main{border-radius:8px 0 0 8px;}
+  /* El catálogo se ancla al botón. z-index alto y no `overflow:hidden` en
+     ningún ancestro de la barra, o el panel quedaría cortado. */
+  .shape-menu{position:absolute;top:calc(100% + 7px);left:0;z-index:30;
+    width:268px;max-height:min(58vh,420px);overflow-y:auto;
+    background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    box-shadow:0 12px 34px rgba(0,0,0,.17);padding:10px 12px 12px;}
+  .shape-menu-h{font-size:10.5px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.06em;color:var(--muted);margin:9px 0 6px;}
+  .shape-menu-h:first-child{margin-top:0;}
+  .shape-menu-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;}
+  .shape-opt{width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;
+    border:1px solid transparent;border-radius:8px;background:none;color:var(--ink);
+    cursor:pointer;transition:background .12s,border-color .12s;}
+  .shape-opt svg{width:21px;height:21px;display:block;}
+  .shape-opt:hover{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-dark);}
+
+  /* --- Espacio de trabajo --- */
+  /* flex:1 + min-height:0 es lo que hace que el lienzo se coma TODO el alto
+     sobrante del diálogo y ni un píxel más: sin min-height:0 un hijo flex no
+     baja de su tamaño de contenido y empujaría la barra de acciones fuera de
+     la ventana, que es justo el defecto que se venía a corregir. */
+  .draw-workspace{flex:1 1 auto;min-height:0;position:relative;background:var(--surface);}
+  .draw-stage{position:absolute;inset:0;overflow:hidden;}
+  #drawCanvas{display:block;}
+  /* Controles flotantes sobre el lienzo (zoom y propiedades). Van dentro del
+     área de dibujo, como en Figma/Canva: el lienzo nunca cambia de tamaño al
+     mostrarlos u ocultarlos, así que no se mueve lo que el docente tiene bajo
+     el dedo o el lápiz. */
+  .draw-zoombar{position:absolute;left:12px;bottom:12px;z-index:4;
+    display:flex;align-items:center;gap:2px;padding:4px;
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    box-shadow:0 3px 12px rgba(0,0,0,.12);}
+  .draw-zoombar button{min-width:30px;height:30px;padding:0 6px;border:none;border-radius:7px;
+    background:none;color:var(--ink);font-size:15px;font-weight:600;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .12s;}
+  .draw-zoombar button:hover{background:var(--accent-soft);color:var(--accent-dark);}
+  .draw-zoom-sep{width:1px;height:18px;background:var(--line);margin:0 3px;}
+  .draw-zoom-label{min-width:46px;text-align:center;font-size:12.5px;font-weight:700;
+    color:var(--muted);font-variant-numeric:tabular-nums;}
   /* Panel contextual: solo aparece con algo seleccionado (drawSyncSelPanel en
-     main.js). Ancho fijo para que el lienzo no "salte" de tamaño cuando aparece
-     o desaparece -- eso movería el punto donde el docente tiene el dedo/lápiz. */
-  .draw-props{flex:0 0 190px;width:190px;border:1px solid var(--line);border-radius:11px;
-    background:var(--surface-2);padding:12px;display:flex;flex-direction:column;gap:12px;}
+     main.js). Flota SOBRE el lienzo en vez de ocupar una columna propia, para
+     que el lienzo no cambie de tamaño al aparecer o desaparecer -- eso movería
+     el punto donde el docente tiene el dedo o el lápiz. */
+  .draw-props{position:absolute;top:12px;right:12px;z-index:5;
+    width:194px;max-height:calc(100% - 24px);overflow-y:auto;
+    border:1px solid var(--line);border-radius:12px;background:var(--surface);
+    box-shadow:0 6px 22px rgba(0,0,0,.15);
+    padding:12px;display:flex;flex-direction:column;gap:12px;}
+  .draw-props[hidden]{display:none;}
   .draw-props-title{font-size:12.5px;font-weight:700;color:var(--muted);}
   .draw-props .draw-grp .row{flex-wrap:wrap;}
   .draw-props-actions{display:flex;flex-direction:column;gap:6px;}
   .draw-props-actions button{width:100%;justify-content:flex-start;min-width:0;}
   #dpLock[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-dark);}
   #dpOpacity{width:100%;}
+  /* Barra de acciones: SIEMPRE visible, pegada al fondo del diálogo. Nunca se
+     desplaza fuera de la pantalla: terminar la tarea ("Insertar") y deshacer un
+     error no pueden depender de que el docente encuentre el final del cuadro. */
+  .draw-foot{flex:0 0 auto;padding:11px 20px;border-top:1px solid var(--line);
+    background:var(--surface);}
+  /* Caja invisible donde vive el cuadro de edición de texto de Fabric (ver el
+     comentario en index.html). 0x0 y fija: aunque el navegador intente
+     desplazarla al enfocar, no hay nada dentro que se pueda mover de sitio, y
+     el lienzo no está aquí dentro. */
+  #drawTextHost{position:fixed;top:0;left:0;width:0;height:0;overflow:hidden;}
   /* La confirmación y los errores del lienzo viven DENTRO del diálogo: un
      <dialog> abierto se pinta en la capa superior y taparía el #toast global. */
-  .draw-msg{display:none;font-size:13px;margin-top:10px;padding:9px 12px;border-radius:9px;
+  .draw-msg{display:none;font-size:13px;margin-bottom:10px;padding:8px 12px;border-radius:9px;
     background:var(--accent-soft);color:var(--accent-dark);border:1px solid var(--line);}
   .draw-msg.show{display:block;}
   .draw-msg.err{background:var(--danger-soft);color:var(--danger);border-color:var(--danger);font-weight:600;}
-  .draw-actions{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin-top:14px;}
+  .draw-actions{display:flex;flex-wrap:wrap;gap:9px;align-items:center;}
   .draw-actions .btn-primary{margin-right:auto;}
   .pair-thumb-draw{font-size:12px;font-weight:700;color:var(--accent-dark);background:none;border:none;cursor:pointer;padding:3px 7px;border-radius:6px;white-space:nowrap;}
   .pair-thumb-draw:hover{background:var(--accent-soft);text-decoration:underline;}
   /* En un teléfono la barra se comía la pantalla (un grupo por fila) y dejaba el
      lienzo muy estrecho. Apretándola, los grupos comparten fila y el dibujo gana
      el espacio, que es lo que el docente necesita ver. */
-  @media (max-width:560px){
-    .draw-bar{gap:9px 11px;padding:10px;}
+  @media (max-width:700px){
+    .draw-dlg{width:100vw;max-width:100vw;height:100vh;max-height:100vh;border-radius:0;}
+    /* La pista larga se cae en pantallas estrechas: ahí cada línea de texto le
+       quita alto al lienzo, que es lo único que de verdad hace falta ver. */
+    .draw-head-hint{display:none;}
+    .draw-head,.draw-bar,.draw-foot{padding-left:12px;padding-right:12px;}
+    /* En vertical los grupos se apilaban en 3-4 filas y la barra se comía la
+       pantalla: el lienzo quedaba más pequeño que el cromo que lo rodea. En una
+       sola fila deslizable la barra ocupa una altura fija y todo el alto
+       sobrante es lienzo, que es lo que hace falta ver para dibujar. */
+    .draw-bar{gap:9px 14px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;
+      scrollbar-width:thin;-webkit-overflow-scrolling:touch;}
+    .draw-grp{flex:0 0 auto;}
+    .draw-grp .row{flex-wrap:nowrap;}
+    /* El catálogo se ancla al botón, pero la barra deslizable lo recortaría al
+       desplazarse. En móvil pasa a hoja inferior fija: no depende de dónde haya
+       quedado el botón y se toca cómodo con el pulgar. */
+    .shape-menu{position:fixed;top:auto;left:12px;right:12px;bottom:12px;
+      width:auto;max-height:min(56vh,380px);}
+    .shape-menu-grid{grid-template-columns:repeat(7,1fr);}
     .draw-grp{gap:4px;}
     .draw-grp .lbl{font-size:9.5px;}
     .draw-grp .row{gap:4px;}
@@ -381,14 +474,11 @@
     .draw-grp .row .draw-sw{width:26px;min-width:26px;height:26px;}
     #drawBgSel{height:34px;font-size:13.5px;padding-top:4px;padding-bottom:4px;}
     .draw-actions .btn-primary{margin-right:0;width:100%;}
-    /* align-items:flex-start (línea 348) es para la fila de escritorio: en
-       columna, ese mismo valor deja que .draw-stage se encoja a su CONTENIDO
-       (el lienzo Fabric) en vez de estirarse al ancho del contenedor. Como
-       resizeDrawStage() calcula el zoom leyendo stage.clientWidth, eso creaba
-       un punto fijo que nunca bajaba de 1000px: el lienzo se salía de la
-       pantalla en vez de achicarse. stretch fuerza el ancho real disponible. */
-    .draw-workspace{flex-direction:column;align-items:stretch;}
-    .draw-props{flex:1 1 auto;width:100%;}
+    .shape-menu{width:min(280px,86vw);}
+    /* Con el panel flotante a 194px sobre un lienzo estrecho no quedaría lienzo
+       a la vista: en móvil pasa a ocupar el ancho completo, abajo. */
+    .draw-props{top:auto;left:12px;right:12px;bottom:12px;width:auto;max-height:52%;}
+    .draw-zoombar{bottom:auto;top:12px;}
   }
 
   /* Advanced */

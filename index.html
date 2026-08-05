@@ -35,8 +35,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500&display=swap" rel="stylesheet">
 <!-- Fraunces: tipografía del wordmark del logo Praxis Pedagógica -->
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,700&display=swap" rel="stylesheet">
-<!-- Hoja de estilos de la aplicación -->
-<link rel="stylesheet" href="css/style.css">
+<!-- Hoja de estilos de la aplicación.
+     El ?v= NO es decorativo: el navegador cachea style.css y main.js con mucha
+     fuerza, y desde la Fase 10-B el HTML y el JS ya no son independientes (el
+     marcado nuevo espera funciones nuevas), así que servir una mitad vieja deja
+     el editor de dibujo roto. Al publicar un cambio en css/ o js/, SUBIR ESTE
+     NÚMERO en los dos sitios. -->
+<link rel="stylesheet" href="css/style.css?v=10c">
 </head>
 <body>
 <!-- ===== Cabecera fija: marca + indicador de "Guardado automático" ===== -->
@@ -647,96 +652,130 @@
   </form>
 </dialog>
 
-<!-- Drawing canvas dialog (Fase 3) -->
-<dialog id="drawDlg" aria-labelledby="drawDlgTitle" style="border:none;border-radius:14px;padding:0;max-width:1320px;width:96vw;box-shadow:0 20px 60px rgba(0,0,0,.3);">
-  <form method="dialog" style="margin:0;">
-    <div style="padding:20px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--surface);border-radius:14px 14px 0 0;z-index:1;">
-      <h3 id="drawDlgTitle" style="font-size:17px;">✏️ Dibujar una imagen</h3>
+<!-- Editor de dibujo (Fase 3 · motor Fabric.js desde la Fase 10)
+     El diálogo NO se desplaza: es una ventana de aplicación de alto fijo, con
+     la barra de herramientas arriba y la de acciones abajo siempre visibles.
+     Lo único que ocupa el espacio sobrante es el lienzo. -->
+<dialog id="drawDlg" class="draw-dlg" aria-labelledby="drawDlgTitle">
+  <form method="dialog" class="draw-shell">
+
+    <div class="draw-head">
+      <h3 id="drawDlgTitle">✏️ Dibujar una imagen</h3>
+      <p class="draw-head-hint">
+        Elige una herramienta y arrastra sobre el lienzo. Con <b>✋</b> te desplazas y
+        con la rueda acercas o alejas: hay espacio sin límite para dibujar.
+        Al insertar, la imagen se recorta sola a lo que dibujaste.
+      </p>
       <button class="btn btn-ghost btn-sm" value="close" type="submit">Cerrar</button>
     </div>
-    <div style="padding:18px 22px;">
 
-      <div class="help tip" style="margin-top:0;">
-        Elige un <b>fondo</b> (cuadrícula, plano cartesiano…), una <b>herramienta</b> y dibuja
-        arrastrando sobre el lienzo. Puedes usar el ratón, el dedo o un lápiz digital.
-        Con <b>Seleccionar</b> puedes tocar cualquier figura para moverla, rotarla,
-        reescalarla o cambiarle el color en el panel de la derecha. Si te equivocas,
-        usa <b>Deshacer</b>. Al insertarlo, el dibujo entra como una imagen normal de
-        la pregunta.
+    <div class="draw-bar">
+      <div class="draw-grp">
+        <span class="lbl" id="lbl-drawTool">Herramienta</span>
+        <div class="row" id="drawTools" role="group" aria-labelledby="lbl-drawTool"></div>
       </div>
-
-      <div class="draw-bar">
-        <div class="draw-grp">
-          <span class="lbl" id="lbl-drawTool">Herramienta</span>
-          <div class="row" id="drawTools" role="group" aria-labelledby="lbl-drawTool"></div>
-        </div>
-        <div class="draw-grp">
-          <span class="lbl" id="lbl-drawColor">Color</span>
-          <div class="row" id="drawColors" role="group" aria-labelledby="lbl-drawColor"></div>
-        </div>
-        <div class="draw-grp">
-          <span class="lbl" id="lbl-drawWidth">Trazo</span>
-          <div class="row" id="drawWidths" role="group" aria-labelledby="lbl-drawWidth"></div>
-        </div>
-        <div class="draw-grp">
-          <span class="lbl"><label for="drawBgSel">Fondo</label></span>
-          <div class="row">
-            <select id="drawBgSel">
-              <option value="blank">Blanco</option>
-              <option value="grid">Cuadrícula</option>
-              <option value="axes">Plano cartesiano</option>
-              <option value="numline">Recta numérica</option>
-              <option value="mm">Papel milimetrado</option>
-              <option value="iso">Cuadrícula isométrica</option>
-            </select>
-          </div>
-        </div>
-        <div class="draw-grp">
-          <span class="lbl" id="lbl-drawBgColor">Color de fondo</span>
-          <div class="row" id="drawBgColors" role="group" aria-labelledby="lbl-drawBgColor"></div>
+      <div class="draw-grp">
+        <span class="lbl" id="lbl-drawShape">Formas</span>
+        <div class="row shape-picker">
+          <!-- Botón partido: la cara grande repite la última forma usada
+               (su ícono se actualiza solo), la flecha abre el catálogo. -->
+          <button type="button" id="shapeMainBtn" class="shape-main"></button>
+          <button type="button" id="shapeMoreBtn" class="shape-more"
+                  aria-haspopup="true" aria-expanded="false" aria-controls="shapeMenu"
+                  title="Ver todas las formas" aria-label="Ver todas las formas">▾</button>
+          <div class="shape-menu" id="shapeMenu" role="menu" aria-label="Formas geométricas" hidden></div>
         </div>
       </div>
-
-      <div class="draw-workspace">
-        <div class="draw-stage">
-          <canvas id="drawCanvas" width="1000" height="700"
-                  role="img" aria-label="Lienzo de dibujo. Arrastra el puntero para dibujar o selecciona una figura para editarla."></canvas>
-        </div>
-        <div class="draw-props" id="drawProps" hidden>
-          <div class="draw-props-title">Figura seleccionada</div>
-          <div class="draw-grp">
-            <span class="lbl" id="lbl-dpColor">Color</span>
-            <div class="row" id="dpColors" role="group" aria-labelledby="lbl-dpColor"></div>
-          </div>
-          <div class="draw-grp">
-            <span class="lbl" id="lbl-dpWidth">Trazo</span>
-            <div class="row" id="dpWidths" role="group" aria-labelledby="lbl-dpWidth"></div>
-          </div>
-          <div class="draw-grp">
-            <span class="lbl"><label for="dpOpacity">Opacidad</label></span>
-            <input type="range" id="dpOpacity" min="20" max="100" step="5">
-          </div>
-          <div class="draw-grp draw-props-actions">
-            <button type="button" class="btn btn-ghost btn-sm" id="dpLock" title="Bloquear/desbloquear (clic derecho también funciona)">🔒 Bloquear</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="dpGroupBtn">Agrupar</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="dpFront" title="Traer al frente">⬆️ Frente</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="dpBack" title="Enviar al fondo">⬇️ Fondo</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="dpDup" title="Duplicar">⧉ Duplicar</button>
-            <button type="button" class="btn btn-ghost btn-sm" id="dpDel" title="Eliminar">🗑️ Eliminar</button>
-          </div>
+      <div class="draw-grp">
+        <span class="lbl" id="lbl-drawColor">Color</span>
+        <div class="row" id="drawColors" role="group" aria-labelledby="lbl-drawColor"></div>
+      </div>
+      <div class="draw-grp">
+        <span class="lbl" id="lbl-drawWidth">Trazo</span>
+        <div class="row" id="drawWidths" role="group" aria-labelledby="lbl-drawWidth"></div>
+      </div>
+      <div class="draw-grp">
+        <span class="lbl"><label for="drawBgSel">Fondo</label></span>
+        <div class="row">
+          <select id="drawBgSel">
+            <option value="blank">Sin cuadrícula</option>
+            <option value="grid">Cuadrícula</option>
+            <option value="axes">Plano cartesiano</option>
+            <option value="numline">Recta numérica</option>
+            <option value="mm">Papel milimetrado</option>
+            <option value="iso">Cuadrícula isométrica</option>
+          </select>
         </div>
       </div>
+      <div class="draw-grp">
+        <span class="lbl" id="lbl-drawBgColor">Color de fondo</span>
+        <div class="row" id="drawBgColors" role="group" aria-labelledby="lbl-drawBgColor"></div>
+      </div>
+    </div>
 
+    <div class="draw-workspace">
+      <div class="draw-stage">
+        <canvas id="drawCanvas" width="1000" height="700"
+                role="img" aria-label="Lienzo de dibujo. Arrastra el puntero para dibujar o selecciona una figura para editarla."></canvas>
+      </div>
+
+      <!-- Zoom flotante sobre el lienzo, no en la barra: pertenece al lienzo
+           (como en Figma), y así no le quita sitio a las herramientas. -->
+      <div class="draw-zoombar" role="group" aria-label="Zoom">
+        <button type="button" id="drawZoomOut" title="Alejar" aria-label="Alejar">−</button>
+        <span id="drawZoomLabel" class="draw-zoom-label" aria-live="polite">100%</span>
+        <button type="button" id="drawZoomIn" title="Acercar" aria-label="Acercar">+</button>
+        <span class="draw-zoom-sep" aria-hidden="true"></span>
+        <button type="button" id="drawZoomFit" title="Ver todo lo dibujado" aria-label="Ver todo lo dibujado">⤢</button>
+        <button type="button" id="drawZoomReset" title="Volver al área de trabajo" aria-label="Volver al área de trabajo">⌂</button>
+      </div>
+
+      <!-- Panel contextual FLOTANTE sobre el lienzo: así el lienzo no cambia de
+           tamaño al aparecer o desaparecer, y no se mueve lo que el docente
+           tiene debajo del dedo o del lápiz. -->
+      <div class="draw-props" id="drawProps" hidden>
+        <div class="draw-props-title">Figura seleccionada</div>
+        <div class="draw-grp">
+          <span class="lbl" id="lbl-dpColor">Color</span>
+          <div class="row" id="dpColors" role="group" aria-labelledby="lbl-dpColor"></div>
+        </div>
+        <div class="draw-grp">
+          <span class="lbl" id="lbl-dpWidth">Trazo</span>
+          <div class="row" id="dpWidths" role="group" aria-labelledby="lbl-dpWidth"></div>
+        </div>
+        <div class="draw-grp">
+          <span class="lbl"><label for="dpOpacity">Opacidad</label></span>
+          <input type="range" id="dpOpacity" min="20" max="100" step="5">
+        </div>
+        <div class="draw-grp draw-props-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="dpLock" title="Bloquear/desbloquear (clic derecho también funciona)">🔒 Bloquear</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="dpGroupBtn">Agrupar</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="dpFront" title="Traer al frente">⬆️ Frente</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="dpBack" title="Enviar al fondo">⬇️ Fondo</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="dpDup" title="Duplicar">⧉ Duplicar</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="dpDel" title="Eliminar">🗑️ Eliminar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alojamiento del cuadro de edición de texto de Fabric. Por defecto Fabric
+         lo cuelga de <body>, y un <dialog> abierto con showModal() deja inerte
+         todo lo que queda fuera de él: ahí el cuadro NUNCA recibe el foco y
+         escribir no funciona. Tiene que vivir dentro del diálogo, pero fuera
+         del lienzo (si el navegador lo desplaza para "traerlo a la vista",
+         movería el canvas). Ver openDrawDlg() en main.js. -->
+    <div id="drawTextHost" aria-hidden="true"></div>
+
+    <div class="draw-foot">
       <div class="draw-msg" id="drawMsg" role="status"></div>
-
       <div class="draw-actions">
         <button type="button" class="btn btn-primary btn-lg" id="drawInsert">Insertar en mi pregunta</button>
         <button type="button" class="btn btn-ghost btn-sm" id="drawUndoBtn" title="Deshacer (Ctrl+Z)">↶ Deshacer</button>
         <button type="button" class="btn btn-ghost btn-sm" id="drawRedoBtn" title="Rehacer (Ctrl+Y)">↷ Rehacer</button>
         <button type="button" class="btn btn-ghost btn-sm" id="drawClearBtn">Limpiar todo</button>
       </div>
-
     </div>
+
   </form>
 </dialog>
 
@@ -903,6 +942,7 @@
      Se carga al final del <body> para que todos los elementos ya existan en el
      DOM cuando el script se ejecute (evita errores de "null" al buscar nodos).
      ======================================================================== -->
-<script src="js/main.js"></script>
+<!-- Ver la nota del ?v= junto a la hoja de estilos: subir el número al publicar. -->
+<script src="js/main.js?v=10c"></script>
 </body>
 </html>

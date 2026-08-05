@@ -1234,15 +1234,149 @@
   // ==========================================================================
   var DRAW_W=1000, DRAW_H=700, GRID=50;   // 1000/50 y 700/50 son enteros: el
                                           // centro (500,350) cae sobre la cuadrícula.
+  // Las formas geométricas ya NO viven aquí: están en DRAW_SHAPES y se eligen
+  // desde el desplegable "Formas" (ver buildShapeMenu). Aquí solo quedan las
+  // herramientas que no son "insertar una figura".
   var DRAW_TOOLS=[
     {id:'select',  glyph:'↖',  cap:'Seleccionar — mover, rotar y reescalar'},
+    {id:'pan',     glyph:'✋', cap:'Mano — arrastra para desplazar el lienzo'},
     {id:'pen',     glyph:'✏️', cap:'Lápiz — dibujo libre'},
     {id:'line',    glyph:'╱',  cap:'Línea recta'},
     {id:'arrow',   glyph:'→',  cap:'Flecha (vectores, señalar algo)'},
-    {id:'rect',    glyph:'▭',  cap:'Rectángulo'},
-    {id:'ellipse', glyph:'◯',  cap:'Elipse o círculo'},
     {id:'text',    glyph:'A',  cap:'Texto — toca el lienzo y escribe (A, B, 5 cm…)'}
   ];
+  // Herramientas que se quedan activas tras usarlas. El resto vuelve solo a
+  // "Seleccionar" en cuanto se crea la figura: insertar es un acto puntual, y
+  // dejar la herramienta armada hacía que el siguiente clic (para mover o
+  // corregir lo recién puesto) insertara otra figura encima sin querer.
+  // El lápiz y la mano SÍ son modos continuos: se dibuja/desplaza varias veces
+  // seguidas, así que volver a Seleccionar en cada trazo sería un estorbo.
+  var DRAW_STICKY_TOOLS=['select','pan','pen'];
+
+  // Catálogo del desplegable de formas. La geometría de cada una se define en
+  // una caja de 100x100 (ver shapeGeom) y se estira al arrastrar, así que
+  // agregar una forma nueva es solo agregar una entrada aquí + su geometría.
+  // `ratio:true` fuerza ancho=alto mientras se arrastra (cuadrado, círculo y
+  // los cuerpos geométricos, que se deforman feo si se estiran de un solo lado).
+  var DRAW_SHAPES=[
+    {g:'Básicas', items:[
+      {id:'rect',      cap:'Rectángulo'},
+      {id:'square',    cap:'Cuadrado', ratio:true},
+      {id:'ellipse',   cap:'Elipse'},
+      {id:'circle',    cap:'Círculo', ratio:true},
+      {id:'triangle',  cap:'Triángulo'},
+      {id:'rtriangle', cap:'Triángulo rectángulo'}
+    ]},
+    {g:'Cuadriláteros y polígonos', items:[
+      {id:'rhombus',       cap:'Rombo'},
+      {id:'trapezoid',     cap:'Trapecio'},
+      {id:'parallelogram', cap:'Paralelogramo'},
+      {id:'pentagon',      cap:'Pentágono'},
+      {id:'hexagon',       cap:'Hexágono'},
+      {id:'octagon',       cap:'Octágono'},
+      {id:'star',          cap:'Estrella'}
+    ]},
+    // Para ejercicios de volumen y área superficial: hoy el docente tenía que
+    // dibujar un cilindro a pulso con el lápiz.
+    {g:'Cuerpos geométricos', items:[
+      {id:'cube',     cap:'Cubo', ratio:true},
+      {id:'cylinder', cap:'Cilindro'},
+      {id:'cone',     cap:'Cono'},
+      {id:'sphere',   cap:'Esfera', ratio:true},
+      {id:'pyramid',  cap:'Pirámide'}
+    ]},
+    {g:'Otras', items:[
+      {id:'bubble', cap:'Globo de diálogo'},
+      {id:'brace',  cap:'Llave { }'}
+    ]}
+  ];
+  function shapeDef(id){
+    for(var i=0;i<DRAW_SHAPES.length;i++){
+      var it=DRAW_SHAPES[i].items;
+      for(var j=0;j<it.length;j++) if(it[j].id===id) return it[j];
+    }
+    return null;
+  }
+
+  // Geometría de cada forma dentro de una caja de 100x100. Devuelve o bien
+  // {pts:[...]} (polígono) o bien {d:'…'} (trazado SVG). De aquí salen DOS
+  // cosas a la vez: el objeto Fabric que se inserta en el lienzo y el ícono
+  // SVG del desplegable — así el botón del menú siempre muestra exactamente
+  // la figura que va a insertar, sin dibujar los íconos por separado.
+  function regularPoly(n, startDeg){
+    var pts=[], r=50;
+    for(var i=0;i<n;i++){
+      var a=(startDeg + i*360/n) * Math.PI/180;
+      pts.push({x:50+r*Math.cos(a), y:50+r*Math.sin(a)});
+    }
+    return pts;
+  }
+  function starPoly(points, outer, inner){
+    var pts=[];
+    for(var i=0;i<points*2;i++){
+      var r=(i%2===0)?outer:inner, a=(-90 + i*180/points)*Math.PI/180;
+      pts.push({x:50+r*Math.cos(a), y:50+r*Math.sin(a)});
+    }
+    return pts;
+  }
+  function shapeGeom(id){
+    switch(id){
+      case 'triangle':      return {pts:[{x:50,y:0},{x:100,y:100},{x:0,y:100}]};
+      case 'rtriangle':     return {pts:[{x:0,y:0},{x:0,y:100},{x:100,y:100}]};
+      case 'rhombus':       return {pts:[{x:50,y:0},{x:100,y:50},{x:50,y:100},{x:0,y:50}]};
+      case 'trapezoid':     return {pts:[{x:25,y:0},{x:75,y:0},{x:100,y:100},{x:0,y:100}]};
+      case 'parallelogram': return {pts:[{x:25,y:0},{x:100,y:0},{x:75,y:100},{x:0,y:100}]};
+      case 'pentagon':      return {pts:regularPoly(5,-90)};
+      case 'hexagon':       return {pts:regularPoly(6,-90)};
+      case 'octagon':       return {pts:regularPoly(8,-90+22.5)};
+      case 'star':          return {pts:starPoly(5,50,21)};
+      // --- Cuerpos geométricos: alambre, no relleno. Las aristas internas van
+      // como subtrazados sueltos (M …) dentro del mismo path. ---
+      case 'cube':     return {d:'M 0 30 L 30 0 L 100 0 L 100 70 L 70 100 L 0 100 Z M 0 30 L 70 30 L 70 100 M 70 30 L 100 0'};
+      case 'cylinder': return {d:'M 0 15 A 50 15 0 0 1 100 15 A 50 15 0 0 1 0 15 M 0 15 L 0 85 A 50 15 0 0 1 100 85 L 100 15'};
+      case 'cone':     return {d:'M 50 0 L 0 85 A 50 15 0 0 1 100 85 Z'};
+      case 'sphere':   return {d:'M 0 50 A 50 50 0 0 1 100 50 A 50 50 0 0 1 0 50 M 0 50 A 50 15 0 0 1 100 50 A 50 15 0 0 1 0 50'};
+      case 'pyramid':  return {d:'M 50 0 L 0 72 L 50 92 L 100 72 Z M 50 0 L 50 92 M 0 72 L 50 52 L 100 72'};
+      case 'bubble':   return {d:'M 12 0 L 88 0 Q 100 0 100 12 L 100 60 Q 100 72 88 72 L 46 72 L 20 96 L 28 72 L 12 72 Q 0 72 0 60 L 0 12 Q 0 0 12 0 Z'};
+      case 'brace':    return {d:'M 72 0 Q 42 0 42 22 L 42 40 Q 42 50 12 50 Q 42 50 42 60 L 42 78 Q 42 100 72 100'};
+      default: return null;
+    }
+  }
+  // Ícono del desplegable: el mismo trazo que la figura real, a 24x24.
+  function shapeIconSVG(id){
+    var g=shapeGeom(id), inner;
+    if(id==='rect')         inner='<rect x="1" y="14" width="98" height="72" />';
+    else if(id==='square')  inner='<rect x="14" y="14" width="72" height="72" />';
+    else if(id==='ellipse') inner='<ellipse cx="50" cy="50" rx="49" ry="36" />';
+    else if(id==='circle')  inner='<circle cx="50" cy="50" r="36" />';
+    else if(g && g.pts)     inner='<polygon points="'+g.pts.map(function(p){return p.x.toFixed(1)+','+p.y.toFixed(1);}).join(' ')+'" />';
+    else if(g)              inner='<path d="'+g.d+'" />';
+    else return '';
+    return '<svg viewBox="-6 -6 112 112" aria-hidden="true" focusable="false" '+
+      'fill="none" stroke="currentColor" stroke-width="7" '+
+      'stroke-linejoin="round" stroke-linecap="round">'+inner+'</svg>';
+  }
+  // Construye el objeto Fabric de una forma, ya con el color y el trazo
+  // actuales. strokeUniform:true es importante: sin él, estirar mucho una
+  // figura de un solo lado engorda el contorno en esa dirección y la línea
+  // se ve de grosor distinto en cada lado.
+  function makeShapeObject(id){
+    // extras se mezcla sobre las opciones comunes (el resto del archivo es
+    // ES5, así que nada de Object.assign).
+    function opts(extras){
+      var o={fill:'rgba(0,0,0,0)', stroke:drawColor, strokeWidth:drawWidth,
+        strokeUniform:true, strokeLineJoin:'round', strokeLineCap:'round',
+        selectable:false, evented:false, objectCaching:false};
+      for(var k in extras) if(extras.hasOwnProperty(k)) o[k]=extras[k];
+      return o;
+    }
+    if(id==='rect' || id==='square') return new fabric.Rect(opts({width:100, height:100}));
+    if(id==='ellipse' || id==='circle') return new fabric.Ellipse(opts({rx:50, ry:50}));
+    var g=shapeGeom(id);
+    if(!g) return null;
+    if(g.pts) return new fabric.Polygon(g.pts, opts({}));
+    return new fabric.Path(g.d, opts({}));
+  }
   var DRAW_COLORS=[
     {v:'#20251f', cap:'Negro'}, {v:'#cf4040', cap:'Rojo'}, {v:'#1d4ed8', cap:'Azul'},
     {v:'#2f8f5b', cap:'Verde'}, {v:'#ee7623', cap:'Naranja'}
@@ -1284,9 +1418,19 @@
   var fcv=null;   // instancia fabric.Canvas — se crea una sola vez, la primera vez que se abre el diálogo
   var drawTool='select', drawColor=DRAW_COLORS[0].v, drawWidth=4, drawBg='blank';
   var drawBgColor=DRAW_BG_COLORS[0].v;
+  var drawShapeKind='rect';   // forma activa del desplegable; se recuerda para poder repetirla de un clic
   var drawBarBuilt=false, drawOnDone=null;
-  var drawOrigin=null;   // punto inicial mientras se arrastra línea/flecha/rect/elipse
+  var drawOrigin=null;   // punto inicial mientras se arrastra línea/flecha/forma
   var drawLive=null;     // objeto Fabric temporal de la forma en curso (vista elástica)
+  // --- Lienzo infinito (Fase 10-B) ---
+  // drawPanning/drawLastPanPt: arrastre en curso con la herramienta Mano.
+  // DRAW_ZOOM_MIN/MAX acotan zoomToPoint()/zoomBy(). El mínimo NO baja de 40 %:
+  // más allá el trazo del docente se vuelve ilegible y el lienzo deja de servir
+  // para trabajar. Alejar aquí sirve para GANAR SITIO donde dibujar (el fondo se
+  // repite sin fin), no para ver el dibujo en miniatura, así que un mínimo
+  // generoso no quita nada.
+  var drawPanning=false, drawLastPanPt=null;
+  var DRAW_ZOOM_MIN=0.4, DRAW_ZOOM_MAX=5;
   // Historial por snapshots del canvas completo (Fabric no trae deshacer/rehacer
   // de fábrica). drawRestoring evita que cargar un snapshot dispare sus propios
   // eventos object:added/modified y se reencole a sí mismo.
@@ -1300,36 +1444,69 @@
   var drawMemo={image:null, json:null, bg:'blank', bgColor:'#ffffff'};
   function canKeepEditing(img){ return !!(img && drawMemo.image===img && drawMemo.json); }
 
-  // --- Fondos (sin cambios: siguen dibujando con canvas 2D "de toda la vida";
-  // ver applyBackground() más abajo para cómo entran ahora a Fabric) ---
-  function drawBackground(c,kind){
-    if(kind==='blank') return;
-    c.save();
+  // ==========================================================================
+  // FONDOS INFINITOS
+  // Antes el fondo se rasterizaba UNA vez a un PNG de 1000x700 y entraba como
+  // `backgroundImage` de Fabric: es decir, el fondo ERA una hoja de tamaño fijo
+  // y fuera de ella no había nada. Ahora se pinta a mano en cada fotograma
+  // (evento `before:render`, ver wireCanvasEvents) sobre la región realmente
+  // visible, así que la cuadrícula no se acaba nunca: alejar el zoom da MÁS
+  // sitio donde dibujar, que es justo para lo que sirve un lienzo infinito.
+  //
+  // Dos familias de fondo, y la diferencia es deliberada:
+  //  - PERIÓDICOS (cuadrícula, milimetrado, isométrico): se repiten sin fin.
+  //  - ANCLADOS (plano cartesiano, recta numérica): son figuras con un origen
+  //    y una escala concretas, así que siguen siendo objetos acotados dentro
+  //    del área de trabajo (DRAW_W x DRAW_H). Un plano cartesiano "infinito"
+  //    sin números no significaría nada, y sus flechas tendrían que vivir en
+  //    el borde de la ventana, moviéndose al desplazarse. El docente ve su
+  //    plano, y alrededor tiene sitio libre para el resto del ejercicio.
+  // ==========================================================================
+  // Pinta el fondo sobre `c` para la región visible `vp` (en coordenadas de
+  // dibujo, de Fabric: canvas.vptCoords) con el zoom `z`.
+  function drawBackground(c, kind, vp, z){
     var fine='#e2eaf1', bold='#c3d1de', ink='#7a8895';
-    if(kind==='mm'){ gridLines(c,10,'#eef3f8'); gridLines(c,GRID,bold); }
-    else if(kind==='iso'){ isoLines(c,fine); }
-    else if(kind==='numline'){ /* la recta numérica va sobre blanco, sin cuadrícula */ }
-    else { gridLines(c,GRID,fine); }
+    if(kind==='mm'){ gridLines(c,10,'#eef3f8',vp,z); gridLines(c,GRID,bold,vp,z); }
+    else if(kind==='iso'){ isoLines(c,fine,vp,z); }
+    else if(kind==='grid' || kind==='axes'){ gridLines(c,GRID,fine,vp,z); }
+    // Los anclados NO se miden en píxeles de pantalla: son parte de la figura,
+    // no del papel, así que engordan y adelgazan con el zoom como un trazo más.
     if(kind==='axes') axesOverlay(c,ink);
     if(kind==='numline') numLineOverlay(c,ink);
-    c.restore();
   }
-  function gridLines(c,step,color){
-    c.strokeStyle=color; c.lineWidth=1; c.beginPath();
-    for(var x=0;x<=DRAW_W;x+=step){ c.moveTo(x+.5,0); c.lineTo(x+.5,DRAW_H); }
-    for(var y=0;y<=DRAW_H;y+=step){ c.moveTo(0,y+.5); c.lineTo(DRAW_W,y+.5); }
+  // px(z) = 1 píxel de PANTALLA expresado en unidades de dibujo. Las líneas de
+  // fondo se miden así (y no en unidades fijas) para que la cuadrícula se vea
+  // igual de fina a cualquier zoom: si no, al alejar las líneas se juntan y se
+  // empastan en una mancha gris, y al acercar se vuelven barrotes gruesos.
+  function px(z){ return 1/(z||1); }
+  function gridLines(c,step,color,vp,z){
+    if(step*z < 5) return;   // tan juntas que serían una mancha: se omite esa familia
+    var x0=Math.floor(vp.tl.x/step)*step, x1=Math.ceil(vp.br.x/step)*step;
+    var y0=Math.floor(vp.tl.y/step)*step, y1=Math.ceil(vp.br.y/step)*step;
+    c.strokeStyle=color; c.lineWidth=px(z); c.beginPath();
+    for(var x=x0;x<=x1;x+=step){ c.moveTo(x,vp.tl.y); c.lineTo(x,vp.br.y); }
+    for(var y=y0;y<=y1;y+=step){ c.moveTo(vp.tl.x,y); c.lineTo(vp.br.x,y); }
     c.stroke();
   }
-  function isoLines(c,color){
-    // Papel isométrico: verticales + dos familias a 30°.
-    var rise=Math.tan(Math.PI/6)*DRAW_W;
-    c.strokeStyle=color; c.lineWidth=1; c.beginPath();
-    for(var x=0;x<=DRAW_W;x+=GRID){ c.moveTo(x+.5,0); c.lineTo(x+.5,DRAW_H); }
-    var span=Math.ceil((DRAW_H+rise)/GRID)*GRID;
-    for(var k=-span;k<=span;k+=GRID){
-      c.moveTo(0,k); c.lineTo(DRAW_W,k+rise);
-      c.moveTo(0,k); c.lineTo(DRAW_W,k-rise);
-    }
+  function isoLines(c,color,vp,z){
+    if(GRID*z < 5) return;
+    // Papel isométrico: verticales + dos familias a 30°. Las diagonales son
+    // y = ±x*tan(30) + k; se recorre k en el rango que cruza la zona visible.
+    var t=Math.tan(Math.PI/6);
+    var x0=Math.floor(vp.tl.x/GRID)*GRID, x1=Math.ceil(vp.br.x/GRID)*GRID;
+    c.strokeStyle=color; c.lineWidth=px(z); c.beginPath();
+    for(var x=x0;x<=x1;x+=GRID){ c.moveTo(x,vp.tl.y); c.lineTo(x,vp.br.y); }
+    [1,-1].forEach(function(sign){
+      // k = y - sign*t*x en las cuatro esquinas; se toma el rango que las cubre.
+      var ks=[vp.tl.y-sign*t*vp.tl.x, vp.tl.y-sign*t*vp.br.x,
+              vp.br.y-sign*t*vp.tl.x, vp.br.y-sign*t*vp.br.x];
+      var kMin=Math.floor(Math.min.apply(null,ks)/GRID)*GRID;
+      var kMax=Math.ceil(Math.max.apply(null,ks)/GRID)*GRID;
+      for(var k=kMin;k<=kMax;k+=GRID){
+        c.moveTo(vp.tl.x, sign*t*vp.tl.x + k);
+        c.lineTo(vp.br.x, sign*t*vp.br.x + k);
+      }
+    });
     c.stroke();
   }
   function arrowHead(c,x,y,ang,size){
@@ -1374,44 +1551,121 @@
     c.textAlign='start';
   }
 
-  // Pone el fondo en el canvas de Fabric: el patrón (líneas) va como imagen de
-  // fondo NO seleccionable/no interactiva, el color de relleno va aparte en
-  // backgroundColor. Se rasteriza a un canvas 2D aparte reutilizando las mismas
-  // funciones de siempre (nada de eso cambió), así que un fondo sigue pesando
-  // lo mismo que antes en el PNG final.
+  // Pinta el fondo del fotograma actual. Se engancha a `before:render`, que
+  // Fabric dispara con el lienzo ya limpio y ANTES de aplicar la transformación
+  // del viewport y de dibujar los objetos, así que aquí se pinta directamente
+  // debajo de todo.
+  //
+  // Tres razones por las que esto reemplazó a `backgroundImage`:
+  //  1. Un PNG de fondo tiene bordes; una función no. El patrón ahora se genera
+  //     para la región visible, sea cual sea, así que no se acaba nunca.
+  //  2. El color de relleno vuelve a cubrir TODA la ventana (ya no hay "hoja"
+  //     ni vacío alrededor que distinguir), que es lo que el docente espera:
+  //     alejar da más papel, no una miniatura sobre un fondo muerto.
+  //  3. Se pinta a la resolución real de cada fotograma, así que la cuadrícula
+  //     sale nítida a cualquier zoom en vez de ser un PNG estirado.
+  //
+  // Importante: `toDataURL()` internamente llama a `renderCanvas()` sobre un
+  // canvas aparte del tamaño del recorte, así que este mismo código corre
+  // también al exportar y el PNG sale con su fondo correcto. No hay que
+  // duplicar nada para la exportación.
+  function renderCanvasBg(ctx){
+    if(!fcv) return;
+    var vt=fcv.viewportTransform, vp=fcv.vptCoords, z=fcv.getZoom();
+    ctx.save();
+    ctx.fillStyle=drawBgColor || '#ffffff';
+    ctx.fillRect(0, 0, fcv.getWidth(), fcv.getHeight());
+    if(drawBg!=='blank' && vp){
+      // Se trabaja en coordenadas de dibujo para no tener que convertir cada
+      // línea a mano; es la misma matriz que Fabric aplicará luego a los objetos.
+      ctx.transform(vt[0],vt[1],vt[2],vt[3],vt[4],vt[5]);
+      ctx.beginPath(); ctx.rect(vp.tl.x, vp.tl.y, vp.br.x-vp.tl.x, vp.br.y-vp.tl.y); ctx.clip();
+      drawBackground(ctx, drawBg, vp, z);
+    }
+    ctx.restore();
+  }
+  // Ya no hay imagen de fondo que reconstruir: cambiar de fondo o de color es
+  // solo repintar. Se conserva el nombre porque lo llaman el historial, la
+  // apertura del diálogo y los botones de fondo.
   function applyBackground(){
     if(!fcv) return;
-    fcv.backgroundColor = drawBgColor || '#ffffff';
-    if(drawBg==='blank'){ fcv.setBackgroundImage(null, fcv.renderAll.bind(fcv)); return; }
-    var off=document.createElement('canvas'); off.width=DRAW_W; off.height=DRAW_H;
-    drawBackground(off.getContext('2d'), drawBg);
-    fabric.Image.fromURL(off.toDataURL('image/png'), function(img){
-      img.set({left:0, top:0, selectable:false, evented:false});
-      fcv.setBackgroundImage(img, fcv.renderAll.bind(fcv));
-    });
+    fcv.backgroundColor=null; fcv.backgroundImage=null;   // los pinta renderCanvasBg, no Fabric
+    fcv.requestRenderAll();
   }
 
-  // --- Escala responsive ---
-  // Las coordenadas internas siguen siendo 1000x700 SIEMPRE (nada de infinito
-  // todavía — eso es la Fase B). Para que el lienzo se siga viendo a lo ancho
-  // del diálogo como antes (la vieja regla CSS width:100% de un <canvas> plano
-  // ya no aplica a los dos canvases que arma Fabric), se hace zoom visual con
-  // canvas.setZoom() + setWidth()/setHeight(): es el patrón estándar de Fabric
-  // para encajar un canvas de tamaño fijo en un contenedor que cambia, y de
-  // paso deja el viewportTransform ya listo para cuando la Fase B necesite
-  // pan/zoom real en vez de solo "ajustar a lo ancho".
+  // --- Lienzo infinito: viewport + pan/zoom (Fase 10-B) ---
+  // El elemento <canvas> de Fabric es una VENTANA que ocupa todo el espacio
+  // disponible en .draw-stage, y el dibujo se recorre por debajo con
+  // viewportTransform (pan/zoom), como en Figma/Canva. DRAW_W x DRAW_H ya no
+  // es una "página" con bordes: es solo el ÁREA DE TRABAJO inicial, la que se
+  // encuadra al abrir y donde se ancla el plano cartesiano / la recta numérica.
+  // Se puede dibujar fuera de ella sin límite, y la exportación recorta a lo
+  // dibujado (ver contentBBox), así que sus medidas exactas ya no condicionan
+  // el resultado.
+  //
+  // resizeDrawStage() solo ajusta el tamaño de la ventana y NUNCA toca el
+  // zoom/pan: cambiar el tamaño del navegador no debe mover la vista que el
+  // docente tenía puesta.
   function resizeDrawStage(){
     if(!fcv) return;
     var stage=document.querySelector('.draw-stage');
     if(!stage) return;
-    var avail=Math.max(200, stage.clientWidth-4);
-    var scale=Math.min(1, avail/DRAW_W);
-    fcv.setZoom(scale);
-    fcv.setWidth(DRAW_W*scale); fcv.setHeight(DRAW_H*scale);
+    var w=Math.max(240, stage.clientWidth);
+    var h=Math.max(200, stage.clientHeight);
+    if(w===fcv.getWidth() && h===fcv.getHeight()) return;
+    fcv.setWidth(w); fcv.setHeight(h);
+    fcv.requestRenderAll();
   }
   window.addEventListener('resize', function(){
     var d=$('drawDlg'); if(d && d.open) resizeDrawStage();
   });
+
+  function clampZoom(z){ return Math.max(DRAW_ZOOM_MIN, Math.min(DRAW_ZOOM_MAX, z)); }
+  function syncZoomLabel(){
+    var el=$('drawZoomLabel');
+    if(el && fcv) el.textContent=Math.round(fcv.getZoom()*100)+'%';
+  }
+  // Encuadra un rectángulo (en coordenadas de dibujo) centrado en la ventana.
+  function frameRect(r, margin){
+    var w=fcv.getWidth(), h=fcv.getHeight(), m=(margin==null?0.9:margin);
+    var scale=clampZoom(Math.min(w/r.width, h/r.height)*m);
+    fcv.setViewportTransform([scale,0,0,scale,
+      (w - r.width*scale)/2 - r.left*scale,
+      (h - r.height*scale)/2 - r.top*scale]);
+    fcv.requestRenderAll();
+    syncZoomLabel();
+  }
+  // Botón "Ajustar": encuadra TODO LO DIBUJADO, no un tamaño de página fijo.
+  // En un lienzo infinito eso es lo único que significa algo — y además es el
+  // botón de rescate para cuando alguien se desplazó lejos y perdió su dibujo
+  // de vista. Sin nada dibujado, vuelve al área de trabajo inicial al 100 %.
+  function fitToContent(){
+    if(!fcv) return;
+    var b=contentBBox();
+    if(!b){ resetView(); return; }
+    frameRect({left:b.left-40, top:b.top-40, width:b.width+80, height:b.height+80}, 0.95);
+  }
+  // Vista inicial: el área de trabajo, centrada, al 100 % si cabe. No se fuerza
+  // a "que quepa entera" a cualquier costo -- en una pantalla baja preferimos
+  // el 100 % (trazo a tamaño real, legible) aunque sobre área por debajo, antes
+  // que un encuadre diminuto. Para eso está el zoom.
+  function resetView(){
+    if(!fcv) return;
+    var w=fcv.getWidth(), h=fcv.getHeight();
+    var scale=clampZoom(Math.min(1, Math.min(w/DRAW_W, h/DRAW_H)*0.98));
+    fcv.setViewportTransform([scale,0,0,scale,
+      (w-DRAW_W*scale)/2, (h-DRAW_H*scale)/2]);
+    fcv.requestRenderAll();
+    syncZoomLabel();
+  }
+  // Zoom centrado en el medio de la ventana (para los botones +/-, a
+  // diferencia de la rueda, que centra en el puntero -- ver wireCanvasEvents).
+  function zoomBy(factor){
+    if(!fcv) return;
+    var center={x:fcv.getWidth()/2, y:fcv.getHeight()/2};
+    fcv.zoomToPoint(center, clampZoom(fcv.getZoom()*factor));
+    syncZoomLabel();
+  }
 
   // --- Historial (deshacer/rehacer) ---
   // El fondo NO viaja en el snapshot (se restaura aparte con applyBackground()):
@@ -1473,8 +1727,11 @@
   // 'arrow','rect','ellipse','text') se arman a mano con mouse:down/move/up
   // (ver wireCanvasEvents) porque Fabric no trae "herramientas de forma" de
   // fábrica, solo el lienzo de selección/edición.
-  function setDrawTool(id){
+  // kind: solo para id==='shape' (qué figura del desplegable insertar).
+  function setDrawTool(id, kind){
     drawTool=id;
+    if(id==='shape' && kind) drawShapeKind=kind;
+    syncToolButtons();
     if(!fcv) return;
     fcv.isDrawingMode=(id==='pen');
     if(id==='pen'){
@@ -1484,11 +1741,41 @@
     fcv.selection=(id==='select');
     // Con una herramienta de forma activa, el lienzo no debe "encontrar" (ni por
     // tanto seleccionar) objetos existentes -- si no, arrastrar para dibujar un
-    // rectángulo encima de una figura previa la movería en cambio.
+    // rectángulo encima de una figura previa la movería en cambio. La Mano
+    // tampoco debe encontrar objetos: arrastrar sobre una figura con la Mano
+    // activa desplaza el lienzo, no la figura.
     fcv.skipTargetFind=(id!=='select');
     if(id!=='select') fcv.discardActiveObject();
-    fcv.defaultCursor=fcv.hoverCursor=(id==='select')?'default':'crosshair';
+    fcv.defaultCursor=fcv.hoverCursor=(id==='select')?'default':(id==='pan'?'grab':'crosshair');
     fcv.requestRenderAll();
+  }
+  // Vuelve a "Seleccionar" y deja la figura recién creada seleccionada, lista
+  // para moverla o cambiarle el color. Es lo que evita el error que reportó
+  // Daniel: con la herramienta armada, el clic siguiente insertaba otra figura
+  // encima en vez de tomar la que acababa de poner.
+  function toolDone(obj){
+    if(DRAW_STICKY_TOOLS.indexOf(drawTool)>-1) return;
+    setDrawTool('select');
+    if(obj){ fcv.setActiveObject(obj); fcv.requestRenderAll(); drawSyncSelPanel(); }
+  }
+  // Refleja la herramienta activa en la barra (incluido el botón de Formas,
+  // que se marca cuando la herramienta activa es 'shape'). Vive aquí y no en
+  // los onclick porque ahora la herramienta también cambia sola (toolDone).
+  function syncToolButtons(){
+    var box=$('drawTools');
+    if(box) for(var i=0;i<box.children.length;i++){
+      var b=box.children[i];
+      b.setAttribute('aria-pressed', b.dataset.tool===drawTool ? 'true':'false');
+    }
+    var sb=$('shapeMainBtn');
+    if(sb){
+      sb.setAttribute('aria-pressed', drawTool==='shape' ? 'true':'false');
+      sb.innerHTML=shapeIconSVG(drawShapeKind);
+      var def=shapeDef(drawShapeKind);
+      var cap=def ? def.cap : 'Forma';
+      sb.title=cap+' — arrastra sobre el lienzo';
+      sb.setAttribute('aria-label','Insertar '+cap.toLowerCase());
+    }
   }
 
   // --- Interfaz del diálogo ---
@@ -1543,16 +1830,62 @@
     }
   }
 
+  // --- Desplegable de formas ---
+  // Botón partido, como en Canva/Figma: la mitad grande inserta la ÚLTIMA forma
+  // usada y la flecha abre el catálogo. Con el regreso automático a Seleccionar
+  // (toolDone), repetir la misma figura es lo más frecuente que hay, y con un
+  // desplegable normal costaría dos clics cada vez.
+  function buildShapeMenu(){
+    var menu=$('shapeMenu');
+    DRAW_SHAPES.forEach(function(grp){
+      var h=document.createElement('div');
+      h.className='shape-menu-h'; h.textContent=grp.g;
+      menu.appendChild(h);
+      var row=document.createElement('div'); row.className='shape-menu-grid';
+      grp.items.forEach(function(it){
+        var b=document.createElement('button'); b.type='button';
+        b.className='shape-opt'; b.dataset.shape=it.id;
+        b.title=it.cap; b.setAttribute('aria-label',it.cap);
+        b.innerHTML=shapeIconSVG(it.id);
+        b.onclick=function(){ setDrawTool('shape', it.id); closeShapeMenu(); };
+        row.appendChild(b);
+      });
+      menu.appendChild(row);
+    });
+  }
+  function openShapeMenu(){
+    $('shapeMenu').hidden=false;
+    $('shapeMoreBtn').setAttribute('aria-expanded','true');
+    var cur=$('shapeMenu').querySelector('.shape-opt[data-shape="'+drawShapeKind+'"]');
+    if(cur) cur.focus();
+  }
+  function closeShapeMenu(){
+    $('shapeMenu').hidden=true;
+    $('shapeMoreBtn').setAttribute('aria-expanded','false');
+  }
+  function shapeMenuOpen(){ return !$('shapeMenu').hidden; }
+
   function buildDrawBar(){
     if(drawBarBuilt) return; drawBarBuilt=true;
     var tools=$('drawTools');
     DRAW_TOOLS.forEach(function(t){
       var b=document.createElement('button'); b.type='button';
       b.textContent=t.glyph; b.title=t.cap; b.setAttribute('aria-label',t.cap);
-      b.setAttribute('aria-pressed', t.id===drawTool ? 'true':'false');
-      b.onclick=function(){ setDrawTool(t.id); drawPressGroup(tools,b); };
+      b.dataset.tool=t.id;
+      b.onclick=function(){ setDrawTool(t.id); };
       tools.appendChild(b);
     });
+    buildShapeMenu();
+    $('shapeMainBtn').onclick=function(){ setDrawTool('shape', drawShapeKind); };
+    $('shapeMoreBtn').onclick=function(){ shapeMenuOpen() ? closeShapeMenu() : openShapeMenu(); };
+    // Cerrar al hacer clic fuera o con Escape. El listener va en el diálogo y no
+    // en document porque un <dialog> modal se pinta en la capa superior: los
+    // clics de dentro no llegan al documento de la misma forma.
+    $('drawDlg').addEventListener('mousedown', function(e){
+      if(!shapeMenuOpen()) return;
+      if(!e.target.closest || !e.target.closest('.shape-picker')) closeShapeMenu();
+    });
+    syncToolButtons();
     var cols=$('drawColors');
     DRAW_COLORS.forEach(function(c){
       var b=document.createElement('button'); b.type='button'; b.className='draw-sw';
@@ -1670,7 +2003,34 @@
   // Arma los manejadores del canvas de Fabric. Se llama una sola vez, justo
   // después de crear la instancia (ver openDrawDlg).
   function wireCanvasEvents(){
+    // El fondo se pinta en cada fotograma en vez de ser una imagen fija: es lo
+    // que hace que la cuadrícula no se acabe nunca. Ver renderCanvasBg().
+    fcv.on('before:render', function(opt){ renderCanvasBg(opt.ctx); });
+    // Zoom con la rueda del ratón, centrado en el puntero (no en el medio de
+    // la ventana) -- es el mismo patrón que usan Figma/Canva y evita que la
+    // vista "salte" al hacer zoom sobre un punto concreto del dibujo.
+    // opt.e.offsetX/offsetY son coordenadas de ventana (canvas), el mismo
+    // espacio que espera zoomToPoint(). preventDefault() evita que la rueda
+    // además desplace la página detrás del diálogo.
+    fcv.on('mouse:wheel', function(opt){
+      var e=opt.e;
+      var zoom=clampZoom(fcv.getZoom()*Math.pow(0.999, e.deltaY));
+      fcv.zoomToPoint({x:e.offsetX, y:e.offsetY}, zoom);
+      syncZoomLabel();
+      e.preventDefault(); e.stopPropagation();
+    });
     fcv.on('mouse:down', function(opt){
+      if(drawTool==='pan'){
+        drawPanning=true;
+        // ignoreVpt:true -- coordenadas de PANTALLA (píxeles de ventana), no
+        // las del dibujo, que es lo que hace falta para medir cuánto se movió
+        // el dedo/ratón entre un evento y el siguiente. getPointer() ya
+        // resuelve touch vs. ratón por dentro, así que esto funciona igual
+        // con el dedo en una tablet.
+        drawLastPanPt=fcv.getPointer(opt.e, true);
+        fcv.setCursor('grabbing');
+        return;
+      }
       if(drawTool==='select' || drawTool==='pen') return;
       var p=fcv.getPointer(opt.e);
       drawOrigin={x:p.x, y:p.y};
@@ -1678,59 +2038,106 @@
         var t=new fabric.IText('', {left:p.x, top:p.y,
           fontFamily:'"Hanken Grotesk",system-ui,sans-serif', fontWeight:700,
           fontSize:14+drawWidth*3.5, fill:drawColor});
-        fcv.add(t); fcv.setActiveObject(t); t.enterEditing(); t.selectAll();
+        fcv.add(t);
+        // El orden importa: PRIMERO se vuelve a la herramienta Seleccionar y
+        // solo DESPUÉS se entra a editar. Con la herramienta Texto todavía
+        // activa, el lienzo tiene skipTargetFind=true y selection=false, y en
+        // esa configuración el cuadro de edición de Fabric no recibe el foco
+        // (era el motivo de que escribir dejara de funcionar). Editar texto
+        // exige el modo normal del lienzo.
+        setDrawTool('select');
+        fcv.setActiveObject(t);
+        t.enterEditing();
+        fcv.requestRenderAll();
         return;
       }
       if(drawTool==='line' || drawTool==='arrow'){
         drawLive=new fabric.Line([p.x,p.y,p.x,p.y],
-          {stroke:drawColor, strokeWidth:drawWidth, selectable:false, evented:false});
-      } else if(drawTool==='rect'){
-        drawLive=new fabric.Rect({left:p.x, top:p.y, width:0, height:0,
-          fill:'rgba(0,0,0,0)', stroke:drawColor, strokeWidth:drawWidth,
-          selectable:false, evented:false});
-      } else if(drawTool==='ellipse'){
-        drawLive=new fabric.Ellipse({left:p.x, top:p.y, rx:0, ry:0,
-          fill:'rgba(0,0,0,0)', stroke:drawColor, strokeWidth:drawWidth,
-          selectable:false, evented:false});
+          {stroke:drawColor, strokeWidth:drawWidth, strokeUniform:true,
+           selectable:false, evented:false});
+      } else if(drawTool==='shape'){
+        // Todas las figuras del desplegable se crean igual: el objeto nace con
+        // su geometría en una caja de 100x100 y se ESCALA al arrastrar (en vez
+        // de recalcular width/height o rx/ry por tipo). Así agregar una forma
+        // nueva no obliga a tocar esta función.
+        drawLive=makeShapeObject(drawShapeKind);
+        if(drawLive){
+          drawLive.__bw=drawLive.width||100;
+          drawLive.__bh=drawLive.height||100;
+          drawLive.set({left:p.x, top:p.y, scaleX:0.001, scaleY:0.001});
+        }
       }
       if(drawLive) fcv.add(drawLive);
     });
     fcv.on('mouse:move', function(opt){
+      if(drawPanning && drawLastPanPt){
+        var pp=fcv.getPointer(opt.e, true);
+        fcv.relativePan({x:pp.x-drawLastPanPt.x, y:pp.y-drawLastPanPt.y});
+        drawLastPanPt=pp;
+        return;
+      }
       if(!drawLive || !drawOrigin) return;
       var p=fcv.getPointer(opt.e);
       if(drawLive.type==='line'){
         drawLive.set({x2:p.x, y2:p.y});
       } else {
-        var x0=Math.min(drawOrigin.x,p.x), y0=Math.min(drawOrigin.y,p.y);
         var w=Math.abs(p.x-drawOrigin.x), h=Math.abs(p.y-drawOrigin.y);
-        if(drawLive.type==='rect') drawLive.set({left:x0, top:y0, width:w, height:h});
-        else drawLive.set({left:x0+w/2, top:y0+h/2, rx:w/2, ry:h/2});
+        var def=shapeDef(drawShapeKind);
+        if(def && def.ratio){ w=h=Math.max(w,h); }   // cuadrado, círculo, cubo, esfera
+        var x0=(p.x<drawOrigin.x) ? drawOrigin.x-w : drawOrigin.x;
+        var y0=(p.y<drawOrigin.y) ? drawOrigin.y-h : drawOrigin.y;
+        drawLive.set({left:x0, top:y0,
+          scaleX:Math.max(w,1)/drawLive.__bw, scaleY:Math.max(h,1)/drawLive.__bh});
       }
       drawLive.setCoords(); fcv.requestRenderAll();
     });
     fcv.on('mouse:up', function(){
+      if(drawPanning){ drawPanning=false; drawLastPanPt=null; fcv.setCursor('grab'); return; }
       drawOrigin=null;
       if(!drawLive) return;
       var s=drawLive; drawLive=null;
       var tooSmall = (s.type==='line')
         ? (Math.abs(s.x2-s.x1)<3 && Math.abs(s.y2-s.y1)<3)
-        : (s.type==='rect') ? (s.width<3 && s.height<3) : ((s.rx*2)<3 && (s.ry*2)<3);
-      if(tooSmall){ fcv.remove(s); fcv.requestRenderAll(); return; }   // clic sin arrastrar: no crea figura vacía
+        : (s.getScaledWidth()<3 && s.getScaledHeight()<3);
+      if(tooSmall){ fcv.remove(s); fcv.requestRenderAll(); toolDone(null); return; }   // clic sin arrastrar: no crea figura vacía
+      var made=s;
       if(drawTool==='arrow' && s.type==='line'){
         var x1=s.x1,y1=s.y1,x2=s.x2,y2=s.y2;
         fcv.remove(s);
-        var dx=x2-x1, dy=y2-y1, ang=Math.atan2(dy,dx), size=Math.max(12,drawWidth*3.4);
-        var head=new fabric.Triangle({left:x2, top:y2, originX:'center', originY:'center',
-          width:size, height:size*1.2, fill:drawColor, angle:ang*180/Math.PI+90});
-        var shaft=new fabric.Line([x1,y1,x2,y2], {stroke:drawColor, strokeWidth:drawWidth});
-        var grp=new fabric.Group([shaft,head], {dArrow:true});
-        fcv.add(grp); fcv.setActiveObject(grp);
+        var dx=x2-x1, dy=y2-y1, ang=Math.atan2(dy,dx);
+        var len=Math.sqrt(dx*dx+dy*dy) || 1;
+        var ux=dx/len, uy=dy/len;
+        // La cabeza nunca puede comerse más del 60% del largo: en una flecha
+        // corta, una cabeza de tamaño fijo tapaba el asta entera.
+        var hl=Math.min(Math.max(12,drawWidth*3.4)*1.2, len*0.6);   // largo de la cabeza
+        var hw=hl/1.2;                                              // ancho de su base
+        // fabric.Triangle con originY:'center' se posiciona por su CENTRO, no
+        // por la punta. Antes se centraba en (x2,y2): la punta sobresalía media
+        // cabeza más allá de donde se soltó el ratón y el asta la atravesaba
+        // hasta el centro. Eso es lo que se veía descentrado, y más aún en
+        // horizontal, donde el desfase queda a la vista contra la cuadrícula.
+        var head=new fabric.Triangle({
+          left:x2-ux*hl/2, top:y2-uy*hl/2, originX:'center', originY:'center',
+          width:hw, height:hl, fill:drawColor, angle:ang*180/Math.PI+90});
+        // El asta termina en la BASE de la cabeza, no en la punta. El 0.92 deja
+        // un pelo de solape para que no aparezca una rendija entre las dos
+        // piezas cuando el trazo es grueso.
+        var shaft=new fabric.Line([x1, y1, x2-ux*hl*0.92, y2-uy*hl*0.92],
+          {stroke:drawColor, strokeWidth:drawWidth, strokeUniform:true, strokeLineCap:'round'});
+        made=new fabric.Group([shaft,head], {dArrow:true});
+        fcv.add(made);
       } else {
         s.set({selectable:true, evented:true});
-        fcv.setActiveObject(s);
       }
+      delete made.__bw; delete made.__bh;
+      fcv.setActiveObject(made);
       fcv.requestRenderAll();
       pushHistory();
+      toolDone(made);   // vuelve a Seleccionar con la figura recién hecha ya elegida
+    });
+    // Soltar el botón fuera del lienzo dejaba la mano "pegada" al puntero.
+    fcv.on('mouse:out', function(){
+      if(drawPanning){ drawPanning=false; drawLastPanPt=null; fcv.setCursor('grab'); }
     });
     fcv.on('path:created', function(){ pushHistory(); });
     fcv.on('object:modified', function(){ pushHistory(); });
@@ -1752,16 +2159,70 @@
     });
   }
 
+  // Caja que envuelve TODOS los objetos reales del lienzo (no la página, no el
+  // fondo), en el mismo espacio de coordenadas que object.left/top -- es decir,
+  // SIN el viewportTransform actual (zoom/pan de la vista) metido en medio.
+  // getBoundingRect(true,true) ya devuelve las coordenadas absolutas de cada
+  // objeto (considera su propio rotate/scale), así que solo hace falta unirlas.
+  function contentBBox(){
+    var objs=fcv.getObjects();
+    if(!objs.length) return null;
+    var minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+    objs.forEach(function(o){
+      o.setCoords();
+      var r=o.getBoundingRect(true, true);
+      minX=Math.min(minX, r.left); minY=Math.min(minY, r.top);
+      maxX=Math.max(maxX, r.left+r.width); maxY=Math.max(maxY, r.top+r.height);
+    });
+    return {left:minX, top:minY, width:maxX-minX, height:maxY-minY};
+  }
+
+  // Caja de los fondos ANCLADOS (plano cartesiano y recta numérica). A
+  // diferencia de la cuadrícula, esos dos no son "papel": son la figura del
+  // ejercicio, y el docente los eligió justamente para que salgan. Sin esto, el
+  // recorte automático se ceñía solo a lo dibujado encima: marcar un punto a la
+  // izquierda del plano exportaba ese punto suelto y el plano desaparecía —
+  // que era exactamente lo que se quería mostrar.
+  // Los fondos periódicos (cuadrícula, milimetrado, isométrico) NO devuelven
+  // nada a propósito: son infinitos, no existe un "entero" que encuadrar.
+  function anchoredBgBBox(){
+    if(drawBg==='axes') return {left:0, top:0, width:DRAW_W, height:DRAW_H};
+    if(drawBg==='numline'){
+      // Extensión real de numLineOverlay(): la recta va de x0-34 a x1+34, con
+      // las marcas hasta y±12 y los números en y+32 (base de texto de 15px).
+      var y=DRAW_H/2;
+      return {left:26, top:y-22, width:DRAW_W-52, height:70};
+    }
+    return null;
+  }
+  function unionRect(a,b){
+    if(!a) return b;
+    if(!b) return a;
+    var l=Math.min(a.left,b.left), t=Math.min(a.top,b.top);
+    return {left:l, top:t,
+      width: Math.max(a.left+a.width,  b.left+b.width)  - l,
+      height:Math.max(a.top+a.height,  b.top+b.height)  - t};
+  }
+
   function openDrawDlg(existing, onDone){
     drawOnDone = onDone || null;
     var d=$('drawDlg');
     drawSay('Cargando el editor…');
     if(d.showModal) d.showModal(); else d.setAttribute('open','');
     ensureFabric().then(function(){
+      // Fabric cuelga de <body> el <textarea> oculto con el que se escribe
+      // dentro del lienzo. Como este editor vive en un <dialog> abierto con
+      // showModal(), todo lo que está FUERA del diálogo queda inerte y ese
+      // textarea nunca puede recibir el foco: la herramienta Texto dejaba
+      // poner el cursor pero no escribir una sola letra. `hiddenTextareaContainer`
+      // es el punto de extensión que trae Fabric para reubicarlo; se pone en el
+      // prototipo (no objeto por objeto) para que valga también para los textos
+      // que se recrean al retomar un dibujo con loadFromJSON.
+      fabric.IText.prototype.hiddenTextareaContainer=$('drawTextHost');
       buildDrawBar();
       if(!fcv){
         fcv=new fabric.Canvas('drawCanvas', {selection:true, preserveObjectStacking:true});
-        fcv.setWidth(DRAW_W); fcv.setHeight(DRAW_H);
+        fcv.setWidth(DRAW_W); fcv.setHeight(DRAW_H);   // tamaño provisional -- resizeDrawStage() lo ajusta al contenedor real más abajo, antes de que se vea
         wireCanvasEvents();
       }
       fcv.discardActiveObject(); fcv.clear();
@@ -1772,9 +2233,14 @@
         var bgcBox=$('drawBgColors'), bgcBtn=null;
         for(var i=0;i<bgcBox.children.length;i++){ if(bgcBox.children[i].dataset.bg===drawBgColor){ bgcBtn=bgcBox.children[i]; break; } }
         drawPressGroup(bgcBox, bgcBtn);
+        closeShapeMenu();
         setDrawTool('select');
-        drawPressGroup($('drawTools'), $('drawTools').children[0]);
         resizeDrawStage();
+        // La vista arranca siempre encuadrada: el área de trabajo si el lienzo
+        // está vacío, o el dibujo que se retoma. La instancia de Fabric se
+        // reutiliza entre aperturas, así que sin esto el docente heredaría el
+        // pan/zoom con el que cerró la vez anterior.
+        if(fcv.getObjects().length) fitToContent(); else resetView();
       }
       if(canKeepEditing(existing)){
         drawRestoring=true;
@@ -1798,6 +2264,10 @@
     });
   }
 
+  $('drawZoomIn').onclick=function(){ zoomBy(1.25); };
+  $('drawZoomOut').onclick=function(){ zoomBy(0.8); };
+  $('drawZoomFit').onclick=function(){ fitToContent(); };
+  $('drawZoomReset').onclick=function(){ resetView(); };
   $('drawUndoBtn').onclick=function(){ drawUndo(); };
   $('drawRedoBtn').onclick=function(){ drawRedo(); };
   $('drawClearBtn').onclick=function(){
@@ -1811,6 +2281,12 @@
   // "seleccionar", así que tampoco hacía falta). El aviso va inline porque el
   // toast global quedaría tapado por el propio diálogo (ver CLAUDE.md).
   $('drawDlg').addEventListener('keydown', function(e){
+    // Escape con el catálogo de formas abierto lo cierra a él, no el diálogo
+    // entero -- perder el dibujo por querer cerrar un desplegable sería brutal.
+    if(e.key==='Escape' && shapeMenuOpen()){
+      e.preventDefault(); e.stopPropagation(); closeShapeMenu();
+      $('shapeMoreBtn').focus(); return;
+    }
     var tn=(e.target.tagName||'').toLowerCase();
     if(tn==='input'||tn==='select'||tn==='textarea') return;
     if((e.key==='Delete'||e.key==='Backspace') && fcv){
@@ -1825,17 +2301,35 @@
   });
 
   $('drawInsert').onclick=function(){
-    if(!fcv || !fcv.getObjects().length){
+    if(!fcv){ return; }
+    fcv.discardActiveObject();
+    // Recorte automático (Fase 10-B): ya no se exporta una página fija de
+    // 1000x700 -- si el docente dibujó un detalle pequeño, el PNG sale del
+    // tamaño de ese detalle. Pero el encuadre es la UNIÓN de lo dibujado con el
+    // fondo anclado (plano cartesiano / recta numérica), que también hay que
+    // mostrar entero: ver anchoredBgBBox().
+    var bbox=unionRect(contentBBox(), anchoredBgBBox());
+    if(!bbox){
       drawSay('El lienzo todavía está vacío: dibuja algo antes de insertarlo.', true); return;
     }
-    fcv.discardActiveObject();
-    // Exportar SIEMPRE a la resolución interna real (1000x700), sin importar el
-    // zoom visual que resizeDrawStage() le puso para caber en el diálogo -- si
-    // no, en una pantalla angosta el PNG saldría más chico de lo que debería.
-    var z=fcv.getZoom(), w=fcv.getWidth(), h=fcv.getHeight();
-    fcv.setZoom(1); fcv.setWidth(DRAW_W); fcv.setHeight(DRAW_H); fcv.renderAll();
-    var data=fcv.toDataURL({format:'png'});   // PNG y no JPEG: el JPEG ensucia los bordes del trazo
-    fcv.setZoom(z); fcv.setWidth(w); fcv.setHeight(h); fcv.renderAll();
+    var pad=28;   // aire alrededor del trazo más extremo, para que no quede pegado al borde
+    var left=bbox.left-pad, top=bbox.top-pad;
+    var width=bbox.width+pad*2, height=bbox.height+pad*2;
+    // Tamaño mínimo: un solo punto o un trazo puntual no debe exportar una
+    // imagen microscópica -- se centra el recorte y se infla hasta el mínimo.
+    var MIN=120;
+    if(width<MIN){ left-=(MIN-width)/2; width=MIN; }
+    if(height<MIN){ top-=(MIN-height)/2; height=MIN; }
+    // El recorte de toDataURL() es en el espacio de coordenadas del objeto
+    // SOLO si el viewportTransform está en identidad -- si no, left/top se
+    // leerían en píxeles de pantalla del zoom/pan actual y el recorte saldría
+    // desplazado. Por eso se resetea antes y se restaura después (igual que
+    // antes se reseteaba el zoom, pero ahora también el pan).
+    var savedVpt=fcv.viewportTransform.slice();
+    fcv.setViewportTransform([1,0,0,1,0,0]);
+    var data=fcv.toDataURL({format:'png', left:left, top:top, width:width, height:height});   // PNG y no JPEG: el JPEG ensucia los bordes del trazo
+    fcv.setViewportTransform(savedVpt);
+    fcv.requestRenderAll();
     var bytes=b64Bytes(data);
     if(bytes>IMG_LIMIT){
       drawSay('El dibujo pesa '+(bytes/1048576).toFixed(2)+' MB y el máximo es 1 MB. Usa un fondo más simple (el milimetrado es el que más pesa) o quita algunos trazos.', true);
