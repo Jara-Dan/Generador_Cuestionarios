@@ -3853,7 +3853,29 @@
   // sumó aquí (2026-07-29, más tarde): el importador ya reconoce \( … \) sin importar
   // la materia, así que extender la instrucción no agrega riesgo técnico nuevo.
   var MATH_PROMPT_SUBJECTS = ['matemáticas','física','química','ciencias naturales'];
-  function isMathSubject(s){ return MATH_PROMPT_SUBJECTS.indexOf(String(s||'').trim().toLowerCase())>-1; }
+
+  // 2026-08-05: las 16 asignaturas de la lista se siguen resolviendo por nombre EXACTO,
+  // y eso NO es pereza — «Educación Física» contiene «física» y no debe pedir LaTeX.
+  // El hueco estaba en «Otra…», donde el docente escribe libre: «Cálculo»,
+  // «Trigonometría» o «Matemáticas 11» se quedaban sin el requisito de LaTeX y sin la
+  // instrucción del bloque de código, que es justo donde más falta hacen. Para esas —y
+  // SOLO para esas, las que no son ninguna de las 16— se busca por palabra clave, sin
+  // tildes (un docente escribe «matematicas» tan fácil como «matemáticas»).
+  var MATH_SUBJECT_HINTS = ['matematic','calculo','algebra','trigonometr','geometr','estadistic','aritmetic','fisica','quimica'];
+  // El rango va con \u escapado a propósito: escrito con los signos combinantes de
+  // verdad, cualquier reguardado del archivo en otra codificación lo destroza en
+  // silencio y la función dejaría de quitar tildes sin lanzar ningún error.
+  var COMBINING_RE = new RegExp('[\\u0300-\\u036f]','g');
+  function noAccents(s){ return String(s||'').toLowerCase().normalize('NFD').replace(COMBINING_RE,''); }
+  function isMathSubject(s){
+    var raw=String(s||'').trim();
+    if(MATH_PROMPT_SUBJECTS.indexOf(raw.toLowerCase())>-1) return true;
+    // Otra de las 16 de la lista → manda el nombre exacto, no la palabra suelta.
+    if(Object.prototype.hasOwnProperty.call(ESPECIFICACIONES_AREA, raw)) return false;
+    var t=noAccents(raw);
+    if(t.indexOf('educacion fisica')>-1 || t.indexOf('ed. fisica')>-1) return false;
+    return MATH_SUBJECT_HINTS.some(function(k){ return t.indexOf(k)>-1; });
+  }
 
   // Enfoque pedagógico por asignatura (2026-07-29, más tarde). Nombres EXACTOS de las
   // <option> de #aiSubjectSel — un typo aquí simplemente no encuentra coincidencia y no
@@ -3893,8 +3915,16 @@
       ? 'Enfoque específico para esta asignatura: '+ESPECIFICACIONES_AREA[asig]+'\n\n'
       : '';
     var mathLine = isMathSubject(asig)
-      ? '5. Fórmulas y notación matemática: cada expresión, ecuación o símbolo matemático que aparezca (en el enunciado o en las opciones) debe ir en LaTeX envuelto EXACTAMENTE en \\( y \\) — por ejemplo \\(x^2+5=9\\). No uses $ ni \\[ \\]. Si es química, escribe las fórmulas con subíndices y superíndices normales de LaTeX (\\(H_2O\\), \\(Na^+\\)) y flechas \\(\\rightarrow\\) o \\(\\rightleftharpoons\\); NO uses el comando \\ce{}, aquí no se dibuja bien.\n'
+      ? '5. Fórmulas y notación matemática: cada expresión, ecuación o símbolo matemático que aparezca (en el enunciado o en las opciones) debe ir en LaTeX envuelto EXACTAMENTE en \\( y \\) — por ejemplo \\(x^2+5=9\\). Nunca uses $ … $, $$ … $$ ni \\[ \\]. Si es química, escribe las fórmulas con subíndices y superíndices normales de LaTeX (\\(H_2O\\), \\(Na^+\\)) y flechas \\(\\rightarrow\\) o \\(\\rightleftharpoons\\); NO uses el comando \\ce{}, aquí no se dibuja bien.\n'
       : '';
+    // Con fórmulas de por medio, el bloque de código deja de ser un estorbo y pasa a ser
+    // imprescindible: si la IA dibuja las fórmulas en su interfaz, al copiarlas el
+    // portapapeles devuelve $ … $ en vez de los \( \) que se pidieron (pasó con Gemini,
+    // 2026-08-05). Dentro de un bloque de código el texto se copia crudo, tal cual.
+    var deliveryLine = isMathSubject(asig)
+      ? 'Entrega el resultado exclusivamente en texto plano con formato Aiken: primero el enunciado (puede ocupar varias líneas, incluyendo el contexto), luego las cuatro opciones una por línea con el formato "A) texto", "B) texto", "C) texto" y "D) texto", y por último la línea "ANSWER: X". No numeres las preguntas, no uses viñetas, negrillas, tablas ni formatos interactivos. Separa cada pregunta de la siguiente con una línea en blanco.\n\n'+
+        'MUY IMPORTANTE: entrega TODA la respuesta dentro de UN SOLO bloque de código de texto plano, y no dibujes ni previsualices las fórmulas. Es la única forma de que al copiar el texto lleguen los delimitadores \\( y \\) tal cual: si dejas que la interfaz las renderice, al copiarlas se convierten en $ … $ y la herramienta ya no las reconoce.'
+      : 'Entrega el resultado exclusivamente en texto plano con formato Aiken: primero el enunciado (puede ocupar varias líneas, incluyendo el contexto), luego las cuatro opciones una por línea con el formato "A) texto", "B) texto", "C) texto" y "D) texto", y por último la línea "ANSWER: X". No numeres las preguntas, no uses viñetas, negrillas, tablas, bloques de código ni formatos interactivos. Separa cada pregunta de la siguiente con una línea en blanco.';
     return 'Actúa como un experto en diseño de evaluaciones educativas bajo el modelo basado en evidencias del ICFES (Instituto Colombiano para la Evaluación de la Educación). Tu objetivo es diseñar preguntas de selección múltiple con única respuesta que evalúen competencias y no la simple memorización de datos.\n\n'+
       'Por favor, genera '+n+' preguntas basadas en los siguientes datos de la asignatura:\n'+
       '- Grado: '+grado+'\n'+
@@ -3910,7 +3940,7 @@
       '- Las otras tres deben ser distractores plausibles (que parezcan correctos si el estudiante tiene un error conceptual común, pero que sean falsos). Evita distractores absurdos o el uso de "todas las anteriores".\n'+
       '4. Al final de cada pregunta indica la opción correcta únicamente con la línea "ANSWER:" seguida de la letra correspondiente (ejemplo: ANSWER: B).\n'+
       mathLine+'\n'+
-      'Entrega el resultado exclusivamente en texto plano con formato Aiken: primero el enunciado (puede ocupar varias líneas, incluyendo el contexto), luego las cuatro opciones una por línea con el formato "A) texto", "B) texto", "C) texto" y "D) texto", y por último la línea "ANSWER: X". No numeres las preguntas, no uses viñetas, negrillas, tablas, bloques de código ni formatos interactivos. Separa cada pregunta de la siguiente con una línea en blanco.';
+      deliveryLine;
   }
 
   function legacyCopy(txt){
@@ -3951,21 +3981,75 @@
   // Fase 9: convierte los \( … \) que la IA haya escrito dentro de texto plano en el
   // MISMO bloque span.fx que arma el editor manual (Fase 2) — mismo `data-latex`, mismo
   // dibujo vía renderLatex(). El texto que no es fórmula se escapa con esc(), como
-  // siempre. Si la IA no respetó el delimitador exacto \( … \) (usó $ o Markdown, por
-  // ejemplo), simplemente no hay coincidencias y todo el texto sale escapado tal cual
-  // — nunca rompe la importación por una fórmula mal delimitada.
+  // siempre. Si no hay ninguna fórmula reconocible, el resultado es exactamente el
+  // esc(text) de toda la vida — nunca rompe la importación por un delimitador raro.
   function escAttr(s){ return esc(s).replace(/"/g,'&quot;'); }
+  function fxSpan(latex){
+    return '<span class="fx" contenteditable="false" data-latex="'+escAttr(latex)+'">'+renderLatex(latex)+'</span>';
+  }
+
+  // Respaldo $ … $ / $$ … $$ (2026-08-05). El prompt pide \( … \) y lo sigue pidiendo,
+  // pero Gemini DIBUJA las fórmulas en su propia interfaz y, al copiar el texto
+  // renderizado, el portapapeles devuelve $ … $ — el docente no puede evitarlo. Aceptar
+  // el $ a secas sería peligroso justo en este dominio: en Colombia el dinero se escribe
+  // «$5.000», así que un enunciado con dos precios («gana $5.000 y pierde $8.000») se
+  // interpretaría como una fórmula que dice « 5.000 y pierde ». De ahí estas guardas:
+  // solo pasa lo que de verdad tiene pinta de expresión matemática.
+  function pairLooksLikeMath(inner){
+    if(!inner || !inner.trim() || inner.length>200 || /\n/.test(inner)) return false;
+    if(/\\[A-Za-z]|[\^_]/.test(inner)) return true;        // \frac, \sqrt, x^2, H_2 → seguro
+    var t=inner.trim();
+    if(/^[A-Za-z]{1,3}$/.test(t)) return true;             // x · dx · pi
+    if(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{2,}/.test(t)) return false; // «por unidad», «y luego» → prosa
+    // Cifra con separador de miles y espacios, pero sin ningún operador: «5.000 y » —
+    // eso es el hueco entre dos precios, no una fórmula. Con un operador de por medio
+    // sí se acepta, porque «G(x) = 5.000x - 8.000» es una expresión legítima.
+    if(!/[=+\-*/<>\\]/.test(t) && /\d[.,]\d{3}\b/.test(t) && /\s/.test(t)) return false;
+    if(t.length>40) return false;
+    return /^[A-Za-z0-9+\-*/=<>(),.:;'|\s{}\[\]]+$/.test(t);
+  }
+
   function detectAndRenderLatex(text){
+    var s=String(text), out='', last=0, m;
+    // 1) El delimitador oficial, el que pide el prompt.
     var re=/\\\(([\s\S]+?)\\\)/g;
-    var out='', last=0, m;
-    while((m=re.exec(text))){
-      out += esc(text.slice(last, m.index));
-      var latex=m[1].trim();
-      out += '<span class="fx" contenteditable="false" data-latex="'+escAttr(latex)+'">'+renderLatex(latex)+'</span>';
+    while((m=re.exec(s))){
+      out += esc(s.slice(last, m.index));
+      out += fxSpan(m[1].trim());
       last = re.lastIndex;
     }
-    out += esc(text.slice(last));
-    return out;
+    if(last){ return out + esc(s.slice(last)); }
+    // 2) Solo si NO apareció ningún \( … \) en todo el texto, se prueba con $.
+    //    Mezclar los dos en el mismo texto sería adivinar; con \( presente, mandan esos.
+    out=''; last=0;
+    var i=0;
+    while(i < s.length){
+      if(s.charAt(i)!=='$'){ i++; continue; }
+      var dbl = s.charAt(i+1)==='$';
+      var tok = dbl?'$$':'$';
+      var open = i + tok.length;
+      var close = s.indexOf(tok, open);
+      if(close<0) break;
+      if(pairLooksLikeMath(s.slice(open, close))){
+        out += esc(s.slice(last, i)) + fxSpan(s.slice(open, close).trim());
+        i = last = close + tok.length;
+      } else {
+        // Descartado: el $ de cierre puede ser en realidad la apertura del par bueno
+        // («cuesta $5.000 y la función es $f(x)=2x$»), así que se reanuda ahí.
+        i = open;
+      }
+    }
+    return out + esc(s.slice(last));
+  }
+
+  // Si la IA entregó todo dentro de un bloque de código (se lo pedimos en el prompt de
+  // las materias con fórmulas, para que al copiar lleguen los \( \) sin convertir), hay
+  // que quitar las vallas ```: si no, la primera se pegaría al enunciado de la primera
+  // pregunta y la última se contaría como un bloque incompleto («1 bloque ignorado»).
+  function stripCodeFences(text){
+    return String(text).replace(/\r/g,'').split('\n')
+      .filter(function(l){ return !/^\s*`{3,}[A-Za-z0-9_+-]*\s*$/.test(l); })
+      .join('\n');
   }
 
   // Parser Aiken resiliente: enunciado multilínea -> opciones "A)" / "A." -> "ANSWER: X".
@@ -3974,7 +4058,7 @@
   // y une líneas sueltas a la opción anterior, para soportar las pequeñas variaciones
   // que distintas IA (ChatGPT, Claude, Gemini) introducen en su salida.
   function parseAiken(text){
-    var lines=String(text).replace(/\r/g,'').split('\n');
+    var lines=stripCodeFences(text).split('\n');
     var out=[], stmtLines=[], opts=[], skipped=0;
     function flush(ansLetter){
       var idx = ansLetter ? ansLetter.toUpperCase().charCodeAt(0)-65 : -1;

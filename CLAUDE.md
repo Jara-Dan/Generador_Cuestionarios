@@ -1157,6 +1157,8 @@ Lo que se construyó:
 **Se decidió NO aceptar `$…$` como delimitador de respaldo** (Daniel lo eligió
 explícitamente): solo `\( … \)`. Más simple y predecible; si la IA no respeta el
 formato pedido, la fórmula queda como texto plano visible y se nota fácil al revisar.
+**⚠️ Revertido el 2026-08-05 tras un caso real** — ver «El portapapeles de Gemini
+devuelve `$`», justo abajo.
 
 Comprobado de punta a punta en el navegador (no solo leyendo el código):
 
@@ -1171,6 +1173,99 @@ Comprobado de punta a punta en el navegador (no solo leyendo el código):
 - El **XML final de descarga** trae `\(t=\sqrt{\frac{2h}{g}}\)` (lo que Moodle/MathJax
   necesita), sin rastro del HTML de MathLive — `serializeMath()` hizo la conversión de
   vuelta exactamente igual que con una fórmula creada a mano.
+
+#### El portapapeles de Gemini devuelve `$` (2026-08-05)
+
+Daniel generó preguntas de cálculo con Gemini usando el prompt de la Fase 9 y al pegarlas
+llegó `$\frac{16}{3}$ metros cuadrados`, con **`$`**, no con `\( … \)`. El importador hizo
+exactamente lo que estaba escrito (no hay coincidencias → todo sale escapado), así que el
+docente vio LaTeX crudo en la vista previa.
+
+**La causa no está en el prompt: está en el botón de copiar.** Gemini **dibuja** las
+fórmulas en su propia interfaz, y al copiar el texto renderizado su serializador emite
+`$ … $` sin importar con qué delimitador venía. El docente no puede evitarlo. Por eso el
+prompt solo no bastaba, y se hicieron **las dos cosas**:
+
+1. **El prompt pide entregar todo dentro de UN bloque de código** (`deliveryLine` en
+   `buildAIPrompt()`, solo para las materias de `MATH_PROMPT_SUBJECTS`), porque ahí el
+   texto se copia crudo. Ojo: eso **contradice a propósito** el «no uses bloques de
+   código» que sigue vigente para el resto de asignaturas — con fórmulas de por medio el
+   bloque deja de ser un estorbo y pasa a ser la única vía fiable. `stripCodeFences()`
+   quita las vallas ``` antes de `parseAiken()`; sin eso la primera se pegaría al
+   enunciado de la primera pregunta y la última se contaría como «1 bloque ignorado».
+2. **`detectAndRenderLatex()` acepta `$ … $` y `$$ … $$` como respaldo**, pero solo si en
+   TODO el texto no apareció ni un `\( … \)` (con el delimitador oficial presente, mandan
+   esos — mezclar los dos sería adivinar).
+
+**Las guardas del respaldo `$` no son opcionales: en Colombia el dinero se escribe
+`$5.000`.** Un enunciado con dos precios («gana $5.000 y pierde $8.000») se leería como
+una fórmula que dice « 5.000 y pierde ». `pairLooksLikeMath(inner)` decide par por par:
+
+- con `\comando`, `^` o `_` → es fórmula, seguro;
+- una a tres letras solas (`x`, `dx`) → fórmula;
+- si hay una palabra de 2+ letras («por unidad», «y luego») → prosa, se descarta;
+- cifra con separador de miles + espacios **y sin ningún operador** («5.000 y ») → dinero.
+  Con un operador sí pasa, porque `G(x) = 5.000x - 8.000` es una expresión legítima —
+  ese matiz salió de probar el caso, no del diseño inicial;
+- lo demás: máximo 40 caracteres y solo caracteres de expresión.
+
+**Al descartar un par, el escáner reanuda justo después del `$` de apertura, no del de
+cierre.** Es lo que salva el caso mixto «cuesta $5.000 y la función es $f(x)=2x$»: el `$`
+que cerraba el par malo es en realidad el que abre el bueno. Con un `RegExp` con `/g` esto
+no se puede hacer, por eso es un bucle a mano.
+
+Comprobado en el navegador con el texto real de Gemini (no solo leyendo el código):
+
+- Las 5 fórmulas del enunciado y las 4 de las opciones se convierten en `span.fx`
+  dibujados de verdad (MathLive genera glifos, no solo el `data-latex`), y la vista previa
+  muestra las 9.
+- **El XML de descarga sale con `\(\frac{32}{3}\)` y cero `$`** — la invariante de Moodle
+  intacta, igual que con una fórmula escrita a mano.
+- Trampa de dinero: «vende a $5.000 la unidad y paga $8.000 de transporte, así que su
+  ganancia es $G(x) = 5.000x - 8.000$ y el precio sube de $5.000 a $7.000» → **solo** se
+  convierte `G(x) = 5.000x - 8.000`; los cuatro precios quedan como texto literal.
+- Una pregunta sin nada de matemáticas y llena de precios (`$12.000`, `$52.000`…) → cero
+  conversiones, todo literal.
+- Regresión: con `\( … \)` presentes, el respaldo `$` ni se activa (un `$5.000` en el
+  mismo enunciado sigue siendo texto), y el escapado sigue bien («5 < 10 & sin fórmula»).
+- El prompt de Matemáticas trae el requisito 5 reforzado (`Nunca uses $ … $, $$ … $$`) y
+  el bloque de código; el de Historia no trae ninguno de los dos y conserva su «no uses
+  bloques de código».
+
+**Confirmado con Gemini el mismo día:** al pedirle «muéstrame tu respuesta anterior
+completa dentro de un bloque de código, sin renderizar», devolvió `\(1.000\)`, `\(31\)`,
+`\(G(x)\)` — o sea que **el prompt siempre se cumplió** y el único culpable era el botón
+de copiar. Ese texto se pegó bien en el generador. Por eso la instrucción del bloque de
+código es el arreglo de raíz y el respaldo `$` es la red de seguridad (docente que copia
+a mano de la parte dibujada, IA que ignora la instrucción, u otra IA con el mismo
+comportamiento al copiar), no al revés.
+
+#### «Otra…»: asignaturas escritas a mano (2026-08-05)
+
+`isMathSubject()` comparaba contra 4 nombres exactos, así que un docente que eligiera
+«Otra…» y escribiera *Cálculo*, *Trigonometría*, *Estadística* o *Matemáticas 11* se
+quedaba **sin el requisito 5 de LaTeX y sin el bloque de código** — justo donde más
+falta hacen. Ahora la resolución es en dos pasos:
+
+1. **Las 16 asignaturas de la lista siguen resolviéndose por nombre EXACTO**, y eso no es
+   pereza: **«Educación Física» contiene «física»** y no debe pedir LaTeX. Por eso, si el
+   texto es una clave de `ESPECIFICACIONES_AREA`, manda el nombre exacto y se acaba ahí.
+2. Solo si **no** es ninguna de las 16 (es decir, vino de «Otra…»), se buscan las palabras
+   de `MATH_SUBJECT_HINTS` sin tildes (`matematic`, `calculo`, `algebra`, `trigonometr`,
+   `geometr`, `estadistic`, `aritmetic`, `fisica`, `quimica`), con una excepción escrita a
+   mano para «educación física / ed. física» tecleada libre.
+
+`noAccents()` usa `new RegExp('[\\u0300-\\u036f]','g')` **a propósito**: con los signos
+combinantes escritos de verdad en el archivo, cualquier reguardado en otra codificación
+los destrozaría y la función dejaría de quitar tildes **sin lanzar ningún error**.
+
+Comprobado capturando el prompt real de 16 asignaturas: las 4 de siempre lo traen;
+Biología, Historia y **Educación Física** (de la lista) no; y escritas a mano, *Cálculo
+diferencial*, *Trigonometría*, *Matemáticas 11*, *matematicas* (sin tilde), *Estadística*
+y *Geometría analítica* sí, mientras *Educación física y deporte*, *Danzas* y *Filosofía*
+no. El enfoque pedagógico de `ESPECIFICACIONES_AREA` sigue saliendo solo con los nombres
+exactos, como antes — una asignatura libre recibe LaTeX pero no enfoque, que es lo
+correcto: no hay enfoque escrito para ella.
 
 ### Enfoque pedagógico por asignatura en el prompt (2026-07-29, más tarde)
 
