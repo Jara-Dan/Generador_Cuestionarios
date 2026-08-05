@@ -57,7 +57,10 @@
   .praxis-logo{display:flex;align-items:center;gap:12px;}
   .praxis-logo__icon{flex:0 0 auto;transition:transform .5s;}
   .praxis-logo:hover .praxis-logo__icon{transform:rotate(90deg);}
-  .praxis-logo__wordmark{display:flex;flex-direction:column;justify-content:center;border-left:2px solid #B6E1E7;padding-left:12px;}
+  /* Oculto a pedido de Daniel (2026-08-04): no quiere responder preguntas sobre
+     "Praxis Pedagógica" en el trabajo. El wordmark sigue en el HTML sin tocar;
+     para reactivarlo, quitar este display:none (o comentar la línea). */
+  .praxis-logo__wordmark{display:none;flex-direction:column;justify-content:center;border-left:2px solid #B6E1E7;padding-left:12px;}
   .praxis-logo__title{font-family:"Fraunces","Georgia",serif;font-size:20px;font-weight:700;text-transform:uppercase;letter-spacing:-.01em;line-height:1;color:#111439;}
   .praxis-logo__subtitle{margin-top:2px;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.22em;line-height:1;color:#111439;}
   .head-title{font-size:14px;color:var(--muted);font-weight:500;}
